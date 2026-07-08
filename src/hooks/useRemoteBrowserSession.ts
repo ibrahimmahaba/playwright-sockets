@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 import { runPixel } from '@semoss/sdk';
 import type {
+  LoadedRecording,
   RemoteBrowserSessionInfo,
   RecordingProjectOption,
+  ReplayStepResult,
   SaveRecordingRequest,
   SaveRecordingResponse,
 } from '../types/browserEvents';
@@ -15,11 +17,27 @@ interface UseRemoteBrowserSessionReturn {
   isCreating: boolean;
   isSaving: boolean;
   isLoadingProjects: boolean;
-  createSession: (url: string, width?: number, height?: number) => Promise<RemoteBrowserSessionInfo | null>;
+  createSession: (
+    url?: string,
+    width?: number,
+    height?: number,
+    preserveExisting?: boolean,
+  ) => Promise<RemoteBrowserSessionInfo | null>;
   closeSession: () => Promise<void>;
   saveRecording: (payload: SaveRecordingRequest) => Promise<SaveRecordingResponse | null>;
   listRecordingProjects: (insightId: string) => Promise<RecordingProjectOption[]>;
+  listRecordingFiles: (insightId: string, projectId: string) => Promise<string[]>;
+  loadRecording: (insightId: string, projectId: string, fileName: string) => Promise<LoadedRecording | null>;
+  replaySingleStep: (
+    insightId: string,
+    projectId: string,
+    fileName: string,
+    stepId: number,
+    tabId: string,
+  ) => Promise<ReplayStepResult>;
 }
+
+const escapePixelString = (value: string): string => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
   const [session, setSession] = useState<RemoteBrowserSessionInfo | null>(null);
@@ -30,7 +48,12 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
   const sessionRef = useRef<RemoteBrowserSessionInfo | null>(null);
 
   const createSession = useCallback(
-    async (url: string, width = 1365, height = 768): Promise<RemoteBrowserSessionInfo | null> => {
+    async (
+      url = '',
+      width = 1365,
+      height = 768,
+      preserveExisting = false,
+    ): Promise<RemoteBrowserSessionInfo | null> => {
       setIsCreating(true);
       setError(null);
       try {
@@ -38,7 +61,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, viewportWidth: width, viewportHeight: height }),
+          body: JSON.stringify({ url, viewportWidth: width, viewportHeight: height, preserveExisting }),
         });
 
         if (!res.ok) {
@@ -147,6 +170,103 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     }
   }, []);
 
+  const listRecordingFiles = useCallback(async (insightId: string, projectId: string): Promise<string[]> => {
+    if (!insightId || !projectId) {
+      return [];
+    }
+
+    setError(null);
+    try {
+      const pixel = `ListPlaywrightScripts(project="${escapePixelString(projectId)}");`;
+      const res = await runPixel(pixel, insightId);
+      const output = res.pixelReturn?.[0]?.output;
+      return Array.isArray(output) ? output.filter((item): item is string => typeof item === 'string') : [];
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to list recordings';
+      setError(msg);
+      return [];
+    }
+  }, []);
+
+  const loadRecording = useCallback(
+    async (insightId: string, projectId: string, fileName: string): Promise<LoadedRecording | null> => {
+      const s = sessionRef.current;
+      if (!s) {
+        setError('Start a remote browser session before loading a recording');
+        return null;
+      }
+      if (!insightId || !projectId || !fileName) {
+        setError('Project and recording are required');
+        return null;
+      }
+
+      setError(null);
+      try {
+        const pixel = `GetAllSteps(sessionId="${escapePixelString(s.sessionId)}", fileName="${escapePixelString(fileName)}", project="${escapePixelString(projectId)}");`;
+        const res = await runPixel(pixel, insightId);
+        const output = res.pixelReturn?.[0]?.output;
+        if (output && typeof output === 'object' && !Array.isArray(output) && 'steps' in output) {
+          return output as LoadedRecording;
+        }
+        throw new Error('Unexpected response while loading recording');
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to load recording';
+        setError(msg);
+        return null;
+      }
+    },
+    [],
+  );
+
+  const replaySingleStep = useCallback(
+    async (
+      insightId: string,
+      projectId: string,
+      fileName: string,
+      stepId: number,
+      tabId: string,
+    ): Promise<ReplayStepResult> => {
+      const s = sessionRef.current;
+      if (!s) {
+        return { success: false, error: 'Start a remote browser session before running a recording' };
+      }
+
+      try {
+        const pixel = `ReplaySingleStep(sessionId="${escapePixelString(s.sessionId)}", fileName="${escapePixelString(fileName)}", stepId=${stepId}, tabId="${escapePixelString(tabId)}", project="${escapePixelString(projectId)}");`;
+        const res = await runPixel(pixel, insightId);
+        const output = res.pixelReturn?.[0]?.output as
+          | {
+              status?: string;
+              error?: string;
+              shouldStop?: boolean;
+              isNewTab?: boolean;
+              newTabId?: string;
+              tabTitle?: string;
+              screenshot?: unknown;
+            }
+          | undefined;
+
+        if (!output) {
+          return { success: false, error: 'Replay did not return a result' };
+        }
+        if (output.status === 'failed' || output.error) {
+          return { success: false, error: output.error || 'Step execution failed' };
+        }
+        return {
+          success: true,
+          shouldStop: output.shouldStop,
+          isNewTab: output.isNewTab,
+          newTabId: output.newTabId,
+          tabTitle: output.tabTitle,
+          screenshot: output.screenshot,
+        };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : 'Failed to replay step' };
+      }
+    },
+    [],
+  );
+
   return {
     session,
     error,
@@ -157,5 +277,8 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     closeSession,
     saveRecording,
     listRecordingProjects,
+    listRecordingFiles,
+    loadRecording,
+    replaySingleStep,
   };
 }

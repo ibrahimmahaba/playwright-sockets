@@ -40,6 +40,7 @@ export interface RemoteBrowserSessionInfo {
   sessionId: string;
   webSocketUrl: string;
   viewport: { width: number; height: number };
+  currentUrl?: string;
 }
 
 export interface SaveRecordingRequest {
@@ -62,6 +63,30 @@ export interface RecordingProjectOption {
   value: string;
   project_id?: string;
   project_name?: string;
+}
+
+export interface LoadedRecordingStep {
+  id?: number;
+  type?: string;
+  shouldRun?: boolean;
+  required?: boolean;
+  [key: string]: unknown;
+}
+
+export interface LoadedRecording {
+  version?: string;
+  meta?: Record<string, unknown>;
+  steps: Record<string, LoadedRecordingStep[] | LoadedRecordingStep[][]>;
+}
+
+export interface ReplayStepResult {
+  success: boolean;
+  shouldStop?: boolean;
+  isNewTab?: boolean;
+  newTabId?: string;
+  tabTitle?: string;
+  error?: string;
+  screenshot?: unknown;
 }
 
 // ─── Connection state ────────────────────────────────────────────────────────
