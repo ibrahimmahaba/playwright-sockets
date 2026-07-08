@@ -3,6 +3,7 @@ import { runPixel } from '@semoss/sdk';
 import type {
   LoadedRecording,
   RemoteBrowserSessionInfo,
+  RemoteBrowserRecordedStep,
   RecordingProjectOption,
   ReplayStepResult,
   SaveRecordingRequest,
@@ -34,7 +35,9 @@ interface UseRemoteBrowserSessionReturn {
     fileName: string,
     stepId: number,
     tabId: string,
+    paramValues?: Record<string, string>,
   ) => Promise<ReplayStepResult>;
+  getRecordedSteps: () => Promise<RemoteBrowserRecordedStep[]>;
 }
 
 const escapePixelString = (value: string): string => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -225,6 +228,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
       fileName: string,
       stepId: number,
       tabId: string,
+      paramValues?: Record<string, string>,
     ): Promise<ReplayStepResult> => {
       const s = sessionRef.current;
       if (!s) {
@@ -232,7 +236,10 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
       }
 
       try {
-        const pixel = `ReplaySingleStep(sessionId="${escapePixelString(s.sessionId)}", fileName="${escapePixelString(fileName)}", stepId=${stepId}, tabId="${escapePixelString(tabId)}", project="${escapePixelString(projectId)}");`;
+        const paramValuesPixel = paramValues && Object.keys(paramValues).length > 0
+          ? `, paramValues=[${JSON.stringify(paramValues)}]`
+          : '';
+        const pixel = `ReplaySingleStep(sessionId="${escapePixelString(s.sessionId)}", fileName="${escapePixelString(fileName)}", stepId=${stepId}, tabId="${escapePixelString(tabId)}"${paramValuesPixel}, project="${escapePixelString(projectId)}");`;
         const res = await runPixel(pixel, insightId);
         const output = res.pixelReturn?.[0]?.output as
           | {
@@ -267,6 +274,22 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     [],
   );
 
+  const getRecordedSteps = useCallback(async (): Promise<RemoteBrowserRecordedStep[]> => {
+    const s = sessionRef.current;
+    if (!s) return [];
+    try {
+      const res = await fetch(`${API_BASE}/${s.sessionId}/steps`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!res.ok) return [];
+      const output = await res.json();
+      return Array.isArray(output) ? output as RemoteBrowserRecordedStep[] : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
   return {
     session,
     error,
@@ -280,5 +303,6 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     listRecordingFiles,
     loadRecording,
     replaySingleStep,
+    getRecordedSteps,
   };
 }

@@ -82,11 +82,11 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
       sx={{
         display: 'flex',
         alignItems: 'center',
-        gap: 1,
-        p: 1,
-        bgcolor: 'background.paper',
-        borderBottom: '1px solid',
-        borderColor: 'divider',
+        gap: 0.5,
+        p: 0,
+        flex: 1,
+        minWidth: 0,
+        bgcolor: 'transparent',
       }}
     >
       {/* Navigation buttons — only active when connected */}
@@ -121,7 +121,13 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
         onKeyDown={handleKeyDown}
         placeholder="https://github.com"
         inputProps={{ 'aria-label': 'Browser URL' }}
-        sx={{ flexGrow: 1 }}
+        sx={{
+          flexGrow: 1,
+          minWidth: 220,
+          '& .MuiInputBase-root': {
+            height: 32,
+          },
+        }}
       />
 
       {/* Navigate (only when already connected) */}
@@ -164,7 +170,7 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
             disabled={connectionState !== 'connected'}
             startIcon={<FiberManualRecordIcon fontSize="small" />}
             onClick={onToggleRecording}
-            sx={{ whiteSpace: 'nowrap' }}
+            sx={{ whiteSpace: 'nowrap', minWidth: 0, px: 1 }}
           >
             {isRecording ? 'Recording' : 'Record'}
           </Button>
@@ -180,7 +186,7 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
             disabled={!canSaveRecording || isSaving}
             startIcon={isSaving ? <CircularProgress size={14} /> : <SaveIcon fontSize="small" />}
             onClick={onOpenSaveRecording}
-            sx={{ whiteSpace: 'nowrap' }}
+            sx={{ whiteSpace: 'nowrap', minWidth: 0, px: 1 }}
           >
             Save
           </Button>

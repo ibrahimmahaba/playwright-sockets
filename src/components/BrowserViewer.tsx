@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Typography, CircularProgress } from '@mui/material';
 import type { ClientToServerEvent, ConnectionState } from '../types/browserEvents';
 
@@ -8,6 +8,7 @@ interface BrowserViewerProps {
   remoteHeight: number;
   latestFrame: string | null; // base64 JPEG
   sendEvent: (event: ClientToServerEvent) => void;
+  onUserInput?: () => void;
 }
 
 /**
@@ -20,9 +21,33 @@ export const BrowserViewer: React.FC<BrowserViewerProps> = ({
   remoteHeight,
   latestFrame,
   sendEvent,
+  onUserInput,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setContainerSize({ width, height });
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const fittedCanvasSize = useMemo(() => {
+    if (!containerSize.width || !containerSize.height || !remoteWidth || !remoteHeight) {
+      return { width: remoteWidth, height: remoteHeight };
+    }
+    const scale = Math.min(containerSize.width / remoteWidth, containerSize.height / remoteHeight);
+    return {
+      width: Math.max(1, Math.floor(remoteWidth * scale)),
+      height: Math.max(1, Math.floor(remoteHeight * scale)),
+    };
+  }, [containerSize.height, containerSize.width, remoteHeight, remoteWidth]);
 
   // ─── Draw incoming frames onto the canvas ───────────────────────────────
   useEffect(() => {
@@ -56,29 +81,32 @@ export const BrowserViewer: React.FC<BrowserViewerProps> = ({
   // ─── Mouse events ──────────────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      onUserInput?.();
       const { x, y } = toRemoteCoords(e.clientX, e.clientY);
       const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
       sendEvent({ type: 'mouse-down', x, y, button });
     },
-    [sendEvent, toRemoteCoords],
+    [onUserInput, sendEvent, toRemoteCoords],
   );
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent) => {
+      onUserInput?.();
       const { x, y } = toRemoteCoords(e.clientX, e.clientY);
       const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
       sendEvent({ type: 'mouse-up', x, y, button });
     },
-    [sendEvent, toRemoteCoords],
+    [onUserInput, sendEvent, toRemoteCoords],
   );
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
+      onUserInput?.();
       const { x, y } = toRemoteCoords(e.clientX, e.clientY);
       const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
       sendEvent({ type: 'mouse-click', x, y, button });
     },
-    [sendEvent, toRemoteCoords],
+    [onUserInput, sendEvent, toRemoteCoords],
   );
 
   // Throttle mouse-move to every 32 ms (~30 events/sec) to avoid flooding
@@ -101,16 +129,18 @@ export const BrowserViewer: React.FC<BrowserViewerProps> = ({
   // ─── Scroll ────────────────────────────────────────────────────────────
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
+      onUserInput?.();
       e.preventDefault();
       const { x, y } = toRemoteCoords(e.clientX, e.clientY);
       sendEvent({ type: 'wheel', x, y, deltaX: e.deltaX, deltaY: e.deltaY });
     },
-    [sendEvent, toRemoteCoords],
+    [onUserInput, sendEvent, toRemoteCoords],
   );
 
   // ─── Keyboard ─────────────────────────────────────────────────────────
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      onUserInput?.();
       // Prevent default for keys that would otherwise trigger browser actions
       const passthroughKeys = [
         'Tab', 'Enter', 'Escape', 'Backspace', 'Delete',
@@ -135,7 +165,7 @@ export const BrowserViewer: React.FC<BrowserViewerProps> = ({
         sendEvent({ type: 'key', key: e.key, code: e.code, modifiers });
       }
     },
-    [sendEvent],
+    [onUserInput, sendEvent],
   );
 
   // ─── Rendering ────────────────────────────────────────────────────────
@@ -180,8 +210,8 @@ export const BrowserViewer: React.FC<BrowserViewerProps> = ({
         tabIndex={0}
         style={{
           display: isConnected || latestFrame ? 'block' : 'none',
-          maxWidth: '100%',
-          maxHeight: '100%',
+          width: fittedCanvasSize.width,
+          height: fittedCanvasSize.height,
           objectFit: 'contain',
           outline: 'none',
         }}

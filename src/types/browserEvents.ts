@@ -89,6 +89,17 @@ export interface ReplayStepResult {
   screenshot?: unknown;
 }
 
+export interface RemoteBrowserRecordedStep {
+  type?: string;
+  url?: string;
+  selector?: string;
+  text?: string;
+  role?: string;
+  coordinates?: { x: number; y: number };
+  viewport?: { width: number; height: number; deviceScaleFactor?: number };
+  timestamp?: number;
+}
+
 // ─── Connection state ────────────────────────────────────────────────────────
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error' | 'closed';
