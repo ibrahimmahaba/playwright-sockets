@@ -5,9 +5,12 @@ import {
   IconButton,
   Tooltip,
   CircularProgress,
+  Button,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import SaveIcon from '@mui/icons-material/Save';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -24,6 +27,11 @@ interface BrowserToolbarProps {
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
+  isRecording: boolean;
+  isSaving: boolean;
+  canSaveRecording: boolean;
+  onToggleRecording: () => void;
+  onOpenSaveRecording: () => void;
 }
 
 export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
@@ -36,6 +44,11 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
   onBack,
   onForward,
   onReload,
+  isRecording,
+  isSaving,
+  canSaveRecording,
+  onToggleRecording,
+  onOpenSaveRecording,
 }) => {
   const [urlInput, setUrlInput] = useState('https://github.com');
   const isActive = connectionState === 'connected' || connectionState === 'connecting';
@@ -135,12 +148,44 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
           </span>
         </Tooltip>
       ) : (
-        <Tooltip title="Stop session">
+        <Tooltip title="Stop viewer socket; browser cache stays available until logout">
           <IconButton size="small" color="error" onClick={onStop}>
             <StopIcon />
           </IconButton>
         </Tooltip>
       )}
+
+      <Tooltip title={isRecording ? 'Stop recording future interactions' : 'Start recording future interactions'}>
+        <span>
+          <Button
+            size="small"
+            variant={isRecording ? 'contained' : 'outlined'}
+            color={isRecording ? 'error' : 'inherit'}
+            disabled={connectionState !== 'connected'}
+            startIcon={<FiberManualRecordIcon fontSize="small" />}
+            onClick={onToggleRecording}
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            {isRecording ? 'Recording' : 'Record'}
+          </Button>
+        </span>
+      </Tooltip>
+
+      <Tooltip title="Save recording to project recordings folder">
+        <span>
+          <Button
+            size="small"
+            variant="outlined"
+            color="primary"
+            disabled={!canSaveRecording || isSaving}
+            startIcon={isSaving ? <CircularProgress size={14} /> : <SaveIcon fontSize="small" />}
+            onClick={onOpenSaveRecording}
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            Save
+          </Button>
+        </span>
+      </Tooltip>
     </Box>
   );
 };

@@ -1,22 +1,25 @@
 // ─── Events sent from React → Java backend ───────────────────────────────────
 
 export type ClientToServerEvent =
-  | { type: 'mouse-click'; x: number; y: number; button: 'left' | 'right' | 'middle' }
-  | { type: 'mouse-move'; x: number; y: number }
-  | { type: 'mouse-down'; x: number; y: number; button: 'left' | 'right' | 'middle' }
-  | { type: 'mouse-up'; x: number; y: number; button: 'left' | 'right' | 'middle' }
-  | { type: 'wheel'; x: number; y: number; deltaX: number; deltaY: number }
-  | { type: 'type-text'; text: string }
+  | { type: 'mouse-click'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean }
+  | { type: 'mouse-move'; x: number; y: number; record?: boolean }
+  | { type: 'mouse-down'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean }
+  | { type: 'mouse-up'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean }
+  | { type: 'wheel'; x: number; y: number; deltaX: number; deltaY: number; record?: boolean }
+  | { type: 'type-text'; text: string; record?: boolean }
   | {
       type: 'key';
       key: string;
       code?: string;
       modifiers?: { alt?: boolean; ctrl?: boolean; meta?: boolean; shift?: boolean };
+      record?: boolean;
     }
-  | { type: 'navigate'; url: string }
-  | { type: 'navigate-back' }
-  | { type: 'navigate-forward' }
-  | { type: 'reload' }
+  | { type: 'navigate'; url: string; record?: boolean }
+  | { type: 'navigate-back'; record?: boolean }
+  | { type: 'navigate-forward'; record?: boolean }
+  | { type: 'reload'; record?: boolean }
+  | { type: 'recording-control'; recording: boolean; discard?: boolean }
+  | { type: 'recording'; recording: boolean; discard?: boolean }
   | { type: 'close-session' };
 
 // ─── Events sent from Java backend → React ───────────────────────────────────
@@ -33,10 +36,32 @@ export type ServerToClientEvent =
 
 // ─── Session info returned by the REST API ───────────────────────────────────
 
-export interface BrowserSessionInfo {
+export interface RemoteBrowserSessionInfo {
   sessionId: string;
   webSocketUrl: string;
   viewport: { width: number; height: number };
+}
+
+export interface SaveRecordingRequest {
+  project: string;
+  name: string;
+  title?: string;
+  description?: string;
+  intent?: string;
+}
+
+export interface SaveRecordingResponse {
+  saved: boolean;
+  project: string;
+  fileName: string;
+  filePath: string;
+}
+
+export interface RecordingProjectOption {
+  label: string;
+  value: string;
+  project_id?: string;
+  project_name?: string;
 }
 
 // ─── Connection state ────────────────────────────────────────────────────────
