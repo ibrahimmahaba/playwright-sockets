@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Box,
   Alert,
@@ -21,22 +27,22 @@ import {
   Collapse,
   IconButton,
   Tooltip,
-} from '@mui/material';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import EditIcon from '@mui/icons-material/Edit';
-import DoneIcon from '@mui/icons-material/Done';
-import CloseIcon from '@mui/icons-material/Close';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PauseIcon from '@mui/icons-material/Pause';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
-import { useInsight } from '@semoss/sdk-react';
-import { BrowserToolbar } from './components/BrowserToolbar';
-import { BrowserViewer } from './components/BrowserViewer';
-import { ConnectionStatus } from './components/ConnectionStatus';
-import { useRemoteBrowserSession } from './hooks/useRemoteBrowserSession';
-import { useBrowserSocket } from './hooks/useBrowserSocket';
+} from "@mui/material";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import EditIcon from "@mui/icons-material/Edit";
+import DoneIcon from "@mui/icons-material/Done";
+import CloseIcon from "@mui/icons-material/Close";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PauseIcon from "@mui/icons-material/Pause";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
+import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
+import { useInsight } from "@semoss/sdk-react";
+import { BrowserToolbar } from "./components/BrowserToolbar";
+import { BrowserViewer } from "./components/BrowserViewer";
+import { ConnectionStatus } from "./components/ConnectionStatus";
+import { useRemoteBrowserSession } from "./hooks/useRemoteBrowserSession";
+import { useBrowserSocket } from "./hooks/useBrowserSocket";
 import type {
   ClientToServerEvent,
   LoadedRecording,
@@ -44,17 +50,21 @@ import type {
   McpToolContext,
   RemoteBrowserRecordedStep,
   StepsEnvelope,
-} from './types/browserEvents';
+} from "./types/browserEvents";
 import {
   getSemossInsightId,
   initSemoss,
   sendMcpResponseToPlayground,
   subscribeToMcpToolContext,
-} from './semoss/client';
+} from "./semoss/client";
 
-function flattenEnvelopeSteps(envelope: StepsEnvelope): Array<Record<string, unknown>> {
+function flattenEnvelopeSteps(
+  envelope: StepsEnvelope,
+): Array<Record<string, unknown>> {
   return Object.values(envelope.steps ?? {}).flatMap((tabSteps) => {
-    const maybeNested = tabSteps as Array<Record<string, unknown> | Record<string, unknown>[]>;
+    const maybeNested = tabSteps as Array<
+      Record<string, unknown> | Record<string, unknown>[]
+    >;
     return maybeNested.flatMap((item) => (Array.isArray(item) ? item : [item]));
   });
 }
@@ -62,66 +72,86 @@ function flattenEnvelopeSteps(envelope: StepsEnvelope): Array<Record<string, unk
 function sanitizeFilePart(value: string): string {
   return value
     .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
     .slice(0, 96);
 }
 
-function buildRecordingFileName(envelope: StepsEnvelope, hint = ''): string {
+function buildRecordingFileName(envelope: StepsEnvelope, hint = ""): string {
   const steps = flattenEnvelopeSteps(envelope);
-  const firstUrl = steps.find((step) => typeof step.url === 'string')?.url;
-  let host = 'browser';
-  if (typeof firstUrl === 'string' && firstUrl) {
+  const firstUrl = steps.find((step) => typeof step.url === "string")?.url;
+  let host = "browser";
+  if (typeof firstUrl === "string" && firstUrl) {
     try {
-      host = new URL(firstUrl).hostname.replace(/^www\./, '').split('.')[0] || host;
+      host =
+        new URL(firstUrl).hostname.replace(/^www\./, "").split(".")[0] || host;
     } catch {
-      host = firstUrl.replace(/^https?:\/\//, '').split('/')[0] || host;
+      host = firstUrl.replace(/^https?:\/\//, "").split("/")[0] || host;
     }
   }
 
   const typedText = steps
-    .filter((step) => step.type === 'TYPE' && typeof step.text === 'string')
+    .filter((step) => step.type === "TYPE" && typeof step.text === "string")
     .map((step) => String(step.text))
-    .join(' ')
+    .join(" ")
     .slice(0, 48);
-  const base = sanitizeFilePart([hint, host, typedText].filter(Boolean).join(' ')) || 'playwright-recording';
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+  const base =
+    sanitizeFilePart([hint, host, typedText].filter(Boolean).join(" ")) ||
+    "playwright-recording";
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\..+$/, "")
+    .replace("T", "-");
   return `${base}-${stamp}.json`;
 }
 
-function buildRecordingTitle(envelope: StepsEnvelope, hint = ''): string {
+function buildRecordingTitle(envelope: StepsEnvelope, hint = ""): string {
   const steps = flattenEnvelopeSteps(envelope);
-  const firstUrl = steps.find((step) => typeof step.url === 'string')?.url;
-  const typedText = steps.find((step) => step.type === 'TYPE' && typeof step.text === 'string')?.text;
-  const parts = [hint, firstUrl, typedText].filter((part) => typeof part === 'string' && part.trim());
-  return String(parts[0] || 'Playwright browser recording').slice(0, 120);
+  const firstUrl = steps.find((step) => typeof step.url === "string")?.url;
+  const typedText = steps.find(
+    (step) => step.type === "TYPE" && typeof step.text === "string",
+  )?.text;
+  const parts = [hint, firstUrl, typedText].filter(
+    (part) => typeof part === "string" && part.trim(),
+  );
+  return String(parts[0] || "Playwright browser recording").slice(0, 120);
 }
 
 function enrichEnvelopeForRoomSave(
   envelope: StepsEnvelope,
   sessionId: string,
-  hint = '',
-  message = '',
+  hint = "",
+  message = "",
 ): StepsEnvelope {
   const now = Date.now();
   return {
     ...envelope,
-    version: envelope.version || '1.0',
+    version: envelope.version || "1.0",
     meta: {
       ...envelope.meta,
       id: envelope.meta?.id || sessionId,
       title: envelope.meta?.title || buildRecordingTitle(envelope, hint),
-      description: envelope.meta?.description || 'Recorded from Playwright Sockets via Playground.',
+      description:
+        envelope.meta?.description ||
+        "Recorded from Playwright Sockets via Playground.",
       createdAt: envelope.meta?.createdAt || now,
       updatedAt: now,
-      intent: envelope.meta?.intent || message || hint || buildRecordingTitle(envelope, hint),
+      intent:
+        envelope.meta?.intent ||
+        message ||
+        hint ||
+        buildRecordingTitle(envelope, hint),
     },
   };
 }
 
-function getToolStringParameter(context: McpToolContext | null, key: string): string {
+function getToolStringParameter(
+  context: McpToolContext | null,
+  key: string,
+): string {
   const value = context?.parameters?.[key];
-  return typeof value === 'string' ? value.trim() : '';
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export default function App() {
@@ -144,31 +174,49 @@ export default function App() {
     getRecordedSteps,
   } = useRemoteBrowserSession();
   const [latestFrame, setLatestFrame] = useState<string | null>(null);
-  const [currentUrl, setCurrentUrl] = useState('');
+  const [currentUrl, setCurrentUrl] = useState("");
   const [snackError, setSnackError] = useState<string | null>(null);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [toolContext, setToolContext] = useState<McpToolContext | null>(null);
   const [semossContextReady, setSemossContextReady] = useState(false);
-  const [mcpStartUrlInput, setMcpStartUrlInput] = useState('');
+  const [mcpStartUrlInput, setMcpStartUrlInput] = useState("");
   const [isReturningToPlayground, setIsReturningToPlayground] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [stopRecordingDialogOpen, setStopRecordingDialogOpen] = useState(false);
   const [saveAfterStop, setSaveAfterStop] = useState(false);
-  const [recordingProjects, setRecordingProjects] = useState<Array<{ label: string; value: string }>>([]);
-  const [saveProject, setSaveProject] = useState<{ label: string; value: string } | null>(null);
-  const [saveTitle, setSaveTitle] = useState('');
-  const [saveDescription, setSaveDescription] = useState('');
-  const [saveIntent, setSaveIntent] = useState('');
-  const [playbackProject, setPlaybackProject] = useState<{ label: string; value: string } | null>(null);
+  const [recordingProjects, setRecordingProjects] = useState<
+    Array<{ label: string; value: string }>
+  >([]);
+  const [saveProject, setSaveProject] = useState<{
+    label: string;
+    value: string;
+  } | null>(null);
+  const [saveTitle, setSaveTitle] = useState("");
+  const [saveDescription, setSaveDescription] = useState("");
+  const [saveIntent, setSaveIntent] = useState("");
+  const [playbackProject, setPlaybackProject] = useState<{
+    label: string;
+    value: string;
+  } | null>(null);
   const [recordingFiles, setRecordingFiles] = useState<string[]>([]);
-  const [selectedRecording, setSelectedRecording] = useState<string | null>(null);
-  const [loadedRecording, setLoadedRecording] = useState<LoadedRecording | null>(null);
+  const [selectedRecording, setSelectedRecording] = useState<string | null>(
+    null,
+  );
+  const [loadedRecording, setLoadedRecording] =
+    useState<LoadedRecording | null>(null);
   const [runningStepId, setRunningStepId] = useState<number | null>(null);
-  const [executedStepIds, setExecutedStepIds] = useState<Set<number>>(() => new Set());
-  const [editedTypeValues, setEditedTypeValues] = useState<Record<number, string>>({});
-  const [recordedSteps, setRecordedSteps] = useState<RemoteBrowserRecordedStep[]>([]);
-  const [isLoadingPlaybackProjects, setIsLoadingPlaybackProjects] = useState(false);
+  const [executedStepIds, setExecutedStepIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+  const [editedTypeValues, setEditedTypeValues] = useState<
+    Record<number, string>
+  >({});
+  const [recordedSteps, setRecordedSteps] = useState<
+    RemoteBrowserRecordedStep[]
+  >([]);
+  const [isLoadingPlaybackProjects, setIsLoadingPlaybackProjects] =
+    useState(false);
   const [isLoadingRecordingFiles, setIsLoadingRecordingFiles] = useState(false);
   const [isLoadingRecording, setIsLoadingRecording] = useState(false);
   const [isRunningRecording, setIsRunningRecording] = useState(false);
@@ -177,23 +225,41 @@ export default function App() {
   const [loadedRecordingOpen, setLoadedRecordingOpen] = useState(false);
   const [recordedStepsOpen, setRecordedStepsOpen] = useState(false);
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
-  const [valueRequiredStepId, setValueRequiredStepId] = useState<number | null>(null);
+  const [valueRequiredStepId, setValueRequiredStepId] = useState<number | null>(
+    null,
+  );
   const autoStartedRef = useRef(false);
   const autoRecordingStartedRef = useRef(false);
   const returningToPlaygroundRef = useRef(false);
   const pauseRequestedRef = useRef(false);
 
   const isPlaygroundMode = !!toolContext;
-  const mcpStartUrl = getToolStringParameter(toolContext, 'start_url') || getToolStringParameter(toolContext, 'startUrl');
+  const mcpStartUrl =
+    getToolStringParameter(toolContext, "start_url") ||
+    getToolStringParameter(toolContext, "startUrl");
   const mcpRecordingNameHint =
-    getToolStringParameter(toolContext, 'recording_name_hint') || getToolStringParameter(toolContext, 'recordingNameHint');
+    getToolStringParameter(toolContext, "recording_name_hint") ||
+    getToolStringParameter(toolContext, "recordingNameHint");
+  const effectiveInsightId = getSemossInsightId() || insightId;
 
-  const flattenedSteps = useMemo((): Array<{ tabId: string; step: LoadedRecordingStep; index: number }> => {
+  const flattenedSteps = useMemo((): Array<{
+    tabId: string;
+    step: LoadedRecordingStep;
+    index: number;
+  }> => {
     if (!loadedRecording?.steps) return [];
-    const rows: Array<{ tabId: string; step: LoadedRecordingStep; index: number }> = [];
+    const rows: Array<{
+      tabId: string;
+      step: LoadedRecordingStep;
+      index: number;
+    }> = [];
     Object.entries(loadedRecording.steps).forEach(([tabId, tabSteps]) => {
-      const maybeNested = tabSteps as Array<LoadedRecordingStep | LoadedRecordingStep[]>;
-      const flat = maybeNested.flatMap((item) => (Array.isArray(item) ? item : [item]));
+      const maybeNested = tabSteps as Array<
+        LoadedRecordingStep | LoadedRecordingStep[]
+      >;
+      const flat = maybeNested.flatMap((item) =>
+        Array.isArray(item) ? item : [item],
+      );
       flat.forEach((step, index) => rows.push({ tabId, step, index }));
     });
     return rows;
@@ -204,7 +270,10 @@ export default function App() {
   }, [flattenedSteps.length]);
 
   const typeSteps = useMemo(
-    () => flattenedSteps.filter(({ step }) => step.type === 'TYPE' && typeof step.id === 'number'),
+    () =>
+      flattenedSteps.filter(
+        ({ step }) => step.type === "TYPE" && typeof step.id === "number",
+      ),
     [flattenedSteps],
   );
 
@@ -229,8 +298,8 @@ export default function App() {
   });
 
   const defaultRecordingName = useMemo(() => {
-    const title = saveTitle.trim() || 'remote-browser-recording';
-    const today = new Date().toISOString().split('T')[0];
+    const title = saveTitle.trim() || "remote-browser-recording";
+    const today = new Date().toISOString().split("T")[0];
     return `${title}-${today}`;
   }, [saveTitle]);
 
@@ -240,14 +309,20 @@ export default function App() {
     initSemoss().then((context) => {
       if (!mounted) return;
       setToolContext(context);
-      setMcpStartUrlInput(getToolStringParameter(context, 'start_url') || getToolStringParameter(context, 'startUrl'));
+      setMcpStartUrlInput(
+        getToolStringParameter(context, "start_url") ||
+          getToolStringParameter(context, "startUrl"),
+      );
       setSemossContextReady(true);
     });
 
     const unsubscribe = subscribeToMcpToolContext((context) => {
       if (!mounted) return;
       setToolContext(context);
-      setMcpStartUrlInput(getToolStringParameter(context, 'start_url') || getToolStringParameter(context, 'startUrl'));
+      setMcpStartUrlInput(
+        getToolStringParameter(context, "start_url") ||
+          getToolStringParameter(context, "startUrl"),
+      );
     });
 
     return () => {
@@ -262,60 +337,80 @@ export default function App() {
     if (isPlaygroundMode && !mcpStartUrl) return;
 
     autoStartedRef.current = true;
-    createSession(isPlaygroundMode ? mcpStartUrl : '', 1365, 768, !isPlaygroundMode).then((info) => {
+    createSession(
+      isPlaygroundMode ? mcpStartUrl : "",
+      1365,
+      768,
+      !isPlaygroundMode,
+    ).then((info) => {
       if (!info) {
         autoStartedRef.current = false;
         return;
       }
-      setCurrentUrl(info.currentUrl || mcpStartUrl || 'https://example.com');
+      setCurrentUrl(info.currentUrl || mcpStartUrl || "https://example.com");
       setLatestFrame(null);
       setIsRecording(false);
     });
-  }, [createSession, isCreating, isPlaygroundMode, mcpStartUrl, semossContextReady, session]);
+  }, [
+    createSession,
+    isCreating,
+    isPlaygroundMode,
+    mcpStartUrl,
+    semossContextReady,
+    session,
+  ]);
 
   useEffect(() => {
-    if (!isPlaygroundMode || autoRecordingStartedRef.current || !session || connectionState !== 'connected') {
+    if (
+      !isPlaygroundMode ||
+      autoRecordingStartedRef.current ||
+      !session ||
+      connectionState !== "connected"
+    ) {
       return;
     }
 
     autoRecordingStartedRef.current = true;
-    sendEvent({ type: 'recording-control', recording: true });
+    sendEvent({ type: "recording-control", recording: true });
     setIsRecording(true);
-    setSnackMessage('Recording started');
+    setSnackMessage("Recording started");
   }, [connectionState, isPlaygroundMode, sendEvent, session]);
 
   const loadPlaywrightProjects = useCallback(() => {
     let cancelled = false;
-    if (!insightId) {
-      setSnackError('Insight ID is required to load recording projects');
+    if (!effectiveInsightId) {
       return () => {
         cancelled = true;
       };
     }
 
     setIsLoadingPlaybackProjects(true);
-    listRecordingProjects(insightId).then((projects) => {
-      if (cancelled) return;
-      const options = projects.map((project) => ({
-        label: project.label || project.project_name || project.value,
-        value: project.value || project.project_id || '',
-      })).filter((project) => project.value);
-      setRecordingProjects(options);
-      setSaveProject((current) => current ?? options[0] ?? null);
-      setPlaybackProject((current) => current ?? options[0] ?? null);
-    }).finally(() => {
-      if (!cancelled) setIsLoadingPlaybackProjects(false);
-    });
+    listRecordingProjects(effectiveInsightId)
+      .then((projects) => {
+        if (cancelled) return;
+        const options = projects
+          .map((project) => ({
+            label: project.label || project.project_name || project.value,
+            value: project.value || project.project_id || "",
+          }))
+          .filter((project) => project.value);
+        setRecordingProjects(options);
+        setSaveProject((current) => current ?? options[0] ?? null);
+        setPlaybackProject((current) => current ?? options[0] ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingPlaybackProjects(false);
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [insightId, listRecordingProjects]);
+  }, [effectiveInsightId, listRecordingProjects]);
 
   useEffect(() => {
     const cleanup = loadPlaywrightProjects();
     return () => {
-      if (typeof cleanup === 'function') cleanup();
+      if (typeof cleanup === "function") cleanup();
     };
   }, [loadPlaywrightProjects]);
 
@@ -323,7 +418,7 @@ export default function App() {
     if (!saveDialogOpen || recordingProjects.length > 0) return;
     const cleanup = loadPlaywrightProjects();
     return () => {
-      if (typeof cleanup === 'function') cleanup();
+      if (typeof cleanup === "function") cleanup();
     };
   }, [loadPlaywrightProjects, recordingProjects.length, saveDialogOpen]);
 
@@ -331,24 +426,26 @@ export default function App() {
     let cancelled = false;
     setLoadedRecording(null);
     setSelectedRecording(null);
-    if (!insightId || !playbackProject?.value) {
+    if (!effectiveInsightId || !playbackProject?.value) {
       setRecordingFiles([]);
       return;
     }
 
     setIsLoadingRecordingFiles(true);
-    listRecordingFiles(insightId, playbackProject.value).then((files) => {
-      if (cancelled) return;
-      setRecordingFiles(files);
-      setSelectedRecording(files[0] ?? null);
-    }).finally(() => {
-      if (!cancelled) setIsLoadingRecordingFiles(false);
-    });
+    listRecordingFiles(effectiveInsightId, playbackProject.value)
+      .then((files) => {
+        if (cancelled) return;
+        setRecordingFiles(files);
+        setSelectedRecording(files[0] ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingRecordingFiles(false);
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [insightId, listRecordingFiles, playbackProject]);
+  }, [effectiveInsightId, listRecordingFiles, playbackProject]);
 
   useEffect(() => {
     if (!isRecording || !session) {
@@ -372,12 +469,15 @@ export default function App() {
     };
   }, [getRecordedSteps, isRecording, session]);
 
-  const requestPlaybackPause = useCallback((reason = 'Playback paused') => {
-    if (!isRunningRecording) return;
-    pauseRequestedRef.current = true;
-    setIsPlaybackPaused(true);
-    setSnackMessage(reason);
-  }, [isRunningRecording]);
+  const requestPlaybackPause = useCallback(
+    (reason = "Playback paused") => {
+      if (!isRunningRecording) return;
+      pauseRequestedRef.current = true;
+      setIsPlaybackPaused(true);
+      setSnackMessage(reason);
+    },
+    [isRunningRecording],
+  );
 
   // ─── Toolbar handlers ───────────────────────────────────────────────────
   const handleStart = useCallback(
@@ -395,7 +495,9 @@ export default function App() {
   const handleStartMcpSession = useCallback(async () => {
     const targetUrl = mcpStartUrlInput.trim();
     if (!targetUrl) {
-      setSnackError('URL is required before opening a Playground recording session');
+      setSnackError(
+        "URL is required before opening a Playground recording session",
+      );
       return;
     }
 
@@ -413,12 +515,12 @@ export default function App() {
 
   const handleStop = useCallback(async () => {
     if (isRecording) {
-      sendEvent({ type: 'recording-control', recording: false, discard: true });
+      sendEvent({ type: "recording-control", recording: false, discard: true });
     }
-    sendEvent({ type: 'close-session' });
+    sendEvent({ type: "close-session" });
     await closeSession();
     setLatestFrame(null);
-    setCurrentUrl('');
+    setCurrentUrl("");
     setIsRecording(false);
     setSaveDialogOpen(false);
     setStopRecordingDialogOpen(false);
@@ -426,32 +528,41 @@ export default function App() {
 
   const handleNavigate = useCallback(
     (url: string) => {
-      sendEvent({ type: 'navigate', url });
+      sendEvent({ type: "navigate", url });
     },
     [sendEvent],
   );
 
-  const handleBack = useCallback(() => sendEvent({ type: 'navigate-back' }), [sendEvent]);
-  const handleForward = useCallback(() => sendEvent({ type: 'navigate-forward' }), [sendEvent]);
-  const handleReload = useCallback(() => sendEvent({ type: 'reload' }), [sendEvent]);
+  const handleBack = useCallback(
+    () => sendEvent({ type: "navigate-back" }),
+    [sendEvent],
+  );
+  const handleForward = useCallback(
+    () => sendEvent({ type: "navigate-forward" }),
+    [sendEvent],
+  );
+  const handleReload = useCallback(
+    () => sendEvent({ type: "reload" }),
+    [sendEvent],
+  );
 
   const handleToggleRecording = useCallback(() => {
     if (!isRecording) {
-      sendEvent({ type: 'recording-control', recording: true });
+      sendEvent({ type: "recording-control", recording: true });
       setIsRecording(true);
-      setSnackMessage('Recording started');
+      setSnackMessage("Recording started");
       return;
     }
     setStopRecordingDialogOpen(true);
   }, [isRecording, sendEvent]);
 
   const handleDiscardRecording = useCallback(() => {
-    sendEvent({ type: 'recording-control', recording: false, discard: true });
+    sendEvent({ type: "recording-control", recording: false, discard: true });
     setIsRecording(false);
     setStopRecordingDialogOpen(false);
     setSaveDialogOpen(false);
     setSaveAfterStop(false);
-    setSnackMessage('Recording discarded');
+    setSnackMessage("Recording discarded");
   }, [sendEvent]);
 
   const handleSaveAndStopRecording = useCallback(() => {
@@ -463,7 +574,7 @@ export default function App() {
   const handleSaveRecording = useCallback(async () => {
     const title = saveTitle.trim();
     if (!saveProject) {
-      setSnackError('Project is required to save the recording');
+      setSnackError("Project is required to save the recording");
       return;
     }
 
@@ -478,13 +589,26 @@ export default function App() {
     if (saved) {
       setSaveDialogOpen(false);
       if (saveAfterStop) {
-        sendEvent({ type: 'recording-control', recording: false, discard: true });
+        sendEvent({
+          type: "recording-control",
+          recording: false,
+          discard: true,
+        });
         setIsRecording(false);
         setSaveAfterStop(false);
       }
       setSnackMessage(`Saved recording: ${saved.fileName}`);
     }
-  }, [defaultRecordingName, saveAfterStop, saveDescription, saveIntent, saveProject, saveRecording, saveTitle, sendEvent]);
+  }, [
+    defaultRecordingName,
+    saveAfterStop,
+    saveDescription,
+    saveIntent,
+    saveProject,
+    saveRecording,
+    saveTitle,
+    sendEvent,
+  ]);
 
   const handleOpenSaveRecording = useCallback(() => {
     setSaveAfterStop(false);
@@ -498,27 +622,33 @@ export default function App() {
 
     try {
       if (!toolContext) {
-        throw new Error('No Playground tool context is available');
+        throw new Error("No Playground tool context is available");
       }
       if (!toolContext.roomId) {
-        throw new Error('No Playground room ID is available for room file save');
+        throw new Error(
+          "No Playground room ID is available for room file save",
+        );
       }
-      const roomBoundInsightId = getSemossInsightId() || insightId;
+      const roomBoundInsightId = effectiveInsightId;
       if (!roomBoundInsightId) {
-        throw new Error('No SEMOSS insight is available for room file save');
+        throw new Error("No SEMOSS insight is available for room file save");
       }
       if (!session) {
-        throw new Error('No active browser session is available to save');
+        throw new Error("No active browser session is available to save");
       }
 
       if (isRecording) {
-        sendEvent({ type: 'recording-control', recording: false, discard: false });
+        sendEvent({
+          type: "recording-control",
+          recording: false,
+          discard: false,
+        });
         setIsRecording(false);
       }
 
       const envelope = await getRecordingEnvelope();
       if (!envelope) {
-        throw new Error('No recording envelope is available');
+        throw new Error("No recording envelope is available");
       }
 
       const enrichedEnvelope = enrichEnvelopeForRoomSave(
@@ -527,10 +657,17 @@ export default function App() {
         mcpRecordingNameHint,
         toolContext.message,
       );
-      const fileName = buildRecordingFileName(enrichedEnvelope, mcpRecordingNameHint);
-      const saved = await saveRoomRecording(roomBoundInsightId, fileName, enrichedEnvelope);
+      const fileName = buildRecordingFileName(
+        enrichedEnvelope,
+        mcpRecordingNameHint,
+      );
+      const saved = await saveRoomRecording(
+        roomBoundInsightId,
+        fileName,
+        enrichedEnvelope,
+      );
       if (!saved) {
-        throw new Error('Failed to save recording to the Playground room');
+        throw new Error("Failed to save recording to the Playground room");
       }
 
       sendMcpResponseToPlayground(
@@ -541,23 +678,26 @@ export default function App() {
           sessionId: session.sessionId,
           roomId: toolContext.roomId,
         },
-        'success',
+        "success",
         toolContext.parameters,
       );
 
-      sendEvent({ type: 'close-session' });
+      sendEvent({ type: "close-session" });
       await closeSession();
       setLatestFrame(null);
-      setCurrentUrl('');
+      setCurrentUrl("");
       setRecordedSteps([]);
       setSnackMessage(`Saved recording: ${saved.roomPath}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to return recording to Playground';
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to return recording to Playground";
       setSnackError(message);
       try {
         sendMcpResponseToPlayground(
           { saved: false, error: message },
-          'error',
+          "error",
           toolContext?.parameters ?? {},
         );
       } catch {
@@ -570,7 +710,7 @@ export default function App() {
   }, [
     closeSession,
     getRecordingEnvelope,
-    insightId,
+    effectiveInsightId,
     isRecording,
     mcpRecordingNameHint,
     saveRoomRecording,
@@ -580,17 +720,23 @@ export default function App() {
   ]);
 
   const handleLoadRecording = useCallback(async () => {
-    if (!insightId || !playbackProject || !selectedRecording) {
-      setSnackError('Select a project and recording first');
+    if (!effectiveInsightId || !playbackProject || !selectedRecording) {
+      setSnackError("Select a project and recording first");
       return;
     }
     if (!session) {
-      setSnackError('Start a remote browser session before loading a recording');
+      setSnackError(
+        "Start a remote browser session before loading a recording",
+      );
       return;
     }
 
     setIsLoadingRecording(true);
-    const loaded = await loadRecording(insightId, playbackProject.value, selectedRecording);
+    const loaded = await loadRecording(
+      effectiveInsightId,
+      playbackProject.value,
+      selectedRecording,
+    );
     setIsLoadingRecording(false);
     if (loaded) {
       setLoadedRecording(loaded);
@@ -601,28 +747,49 @@ export default function App() {
       pauseRequestedRef.current = false;
       const initialValues: Record<number, string> = {};
       Object.values(loaded.steps).forEach((tabSteps) => {
-        const maybeNested = tabSteps as Array<LoadedRecordingStep | LoadedRecordingStep[]>;
-        maybeNested.flatMap((item) => (Array.isArray(item) ? item : [item])).forEach((step) => {
-          if (step.type === 'TYPE' && typeof step.id === 'number' && typeof step.text === 'string') {
-            initialValues[step.id] = step.text;
-          }
-        });
+        const maybeNested = tabSteps as Array<
+          LoadedRecordingStep | LoadedRecordingStep[]
+        >;
+        maybeNested
+          .flatMap((item) => (Array.isArray(item) ? item : [item]))
+          .forEach((step) => {
+            if (
+              step.type === "TYPE" &&
+              typeof step.id === "number" &&
+              typeof step.text === "string"
+            ) {
+              initialValues[step.id] = step.text;
+            }
+          });
       });
       setEditedTypeValues(initialValues);
       setLoadedRecordingOpen(true);
       setSnackMessage(`Loaded ${selectedRecording}`);
     }
-  }, [insightId, loadRecording, playbackProject, selectedRecording, session]);
+  }, [
+    effectiveInsightId,
+    loadRecording,
+    playbackProject,
+    selectedRecording,
+    session,
+  ]);
 
   const handleRunStep = useCallback(
     async (tabId: string, step: LoadedRecordingStep) => {
-      if (!insightId || !playbackProject || !selectedRecording || typeof step.id !== 'number') {
-        setSnackError('Cannot run this step');
+      if (
+        !effectiveInsightId ||
+        !playbackProject ||
+        !selectedRecording ||
+        typeof step.id !== "number"
+      ) {
+        setSnackError("Cannot run this step");
         return false;
       }
 
-      if (step.type === 'TYPE') {
-        const typeValue = editedTypeValues[step.id] ?? (typeof step.text === 'string' ? step.text : '');
+      if (step.type === "TYPE") {
+        const typeValue =
+          editedTypeValues[step.id] ??
+          (typeof step.text === "string" ? step.text : "");
         if (!typeValue.trim()) {
           setValueRequiredStepId(step.id);
           setEditingStepId(step.id);
@@ -638,11 +805,15 @@ export default function App() {
       setValueRequiredStepId(null);
       setRunningStepId(step.id);
       const paramValues =
-        step.type === 'TYPE' && typeof step.label === 'string'
-          ? { [step.label]: editedTypeValues[step.id] ?? (typeof step.text === 'string' ? step.text : '') }
+        step.type === "TYPE" && typeof step.label === "string"
+          ? {
+              [step.label]:
+                editedTypeValues[step.id] ??
+                (typeof step.text === "string" ? step.text : ""),
+            }
           : undefined;
       const result = await replaySingleStep(
-        insightId,
+        effectiveInsightId,
         playbackProject.value,
         selectedRecording,
         step.id,
@@ -665,12 +836,23 @@ export default function App() {
       }
       return true;
     },
-    [editedTypeValues, insightId, playbackProject, replaySingleStep, selectedRecording],
+    [
+      editedTypeValues,
+      effectiveInsightId,
+      playbackProject,
+      replaySingleStep,
+      selectedRecording,
+    ],
   );
 
   const handleRunLoadedRecording = useCallback(async () => {
-    if (!insightId || !playbackProject || !selectedRecording || !loadedRecording) {
-      setSnackError('Load a recording before running it');
+    if (
+      !effectiveInsightId ||
+      !playbackProject ||
+      !selectedRecording ||
+      !loadedRecording
+    ) {
+      setSnackError("Load a recording before running it");
       return;
     }
 
@@ -680,7 +862,7 @@ export default function App() {
     pauseRequestedRef.current = false;
     try {
       for (const { tabId, step } of flattenedSteps) {
-        if (step.shouldRun === false || typeof step.id !== 'number') {
+        if (step.shouldRun === false || typeof step.id !== "number") {
           continue;
         }
         if (executedStepIds.has(step.id)) {
@@ -696,24 +878,40 @@ export default function App() {
     } finally {
       setIsRunningRecording(false);
     }
-  }, [executedStepIds, flattenedSteps, handleRunStep, insightId, loadedRecording, playbackProject, selectedRecording]);
+  }, [
+    executedStepIds,
+    flattenedSteps,
+    handleRunStep,
+    effectiveInsightId,
+    loadedRecording,
+    playbackProject,
+    selectedRecording,
+  ]);
 
   const remoteWidth = session?.viewport.width ?? 1365;
   const remoteHeight = session?.viewport.height ?? 768;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'background.default', overflow: 'hidden' }}>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        bgcolor: "background.default",
+        overflow: "hidden",
+      }}
+    >
       {/* Toolbar row */}
       <Box
         sx={{
-          display: 'flex',
-          alignItems: 'center',
+          display: "flex",
+          alignItems: "center",
           gap: 0.5,
           px: 0.5,
           py: 0.25,
-          bgcolor: 'background.paper',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
+          bgcolor: "background.paper",
+          borderBottom: "1px solid",
+          borderColor: "divider",
           minHeight: 38,
         }}
       >
@@ -742,36 +940,64 @@ export default function App() {
             color="primary"
             disabled={isReturningToPlayground || isSaving}
             onClick={handleReturnToPlayground}
-            startIcon={isReturningToPlayground || isSaving ? <CircularProgress size={14} color="inherit" /> : <DoneIcon fontSize="small" />}
-            sx={{ whiteSpace: 'nowrap', minWidth: 0, px: 1 }}
+            startIcon={
+              isReturningToPlayground || isSaving ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : (
+                <DoneIcon fontSize="small" />
+              )
+            }
+            sx={{ whiteSpace: "nowrap", minWidth: 0, px: 1 }}
           >
-            {isReturningToPlayground || isSaving ? 'Returning' : 'Return to Playground'}
+            {isReturningToPlayground || isSaving
+              ? "Returning"
+              : "Return to Playground"}
           </Button>
         )}
         <Button
           size="small"
-          variant={playbackControlsOpen || loadedRecordingOpen ? 'contained' : 'outlined'}
-          startIcon={playbackControlsOpen || loadedRecordingOpen ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+          variant={
+            playbackControlsOpen || loadedRecordingOpen
+              ? "contained"
+              : "outlined"
+          }
+          startIcon={
+            playbackControlsOpen || loadedRecordingOpen ? (
+              <ExpandMoreIcon />
+            ) : (
+              <ChevronRightIcon />
+            )
+          }
           onClick={() => {
             setPlaybackControlsOpen((open) => !open);
             if (loadedRecording) setLoadedRecordingOpen(true);
           }}
-          sx={{ whiteSpace: 'nowrap', minWidth: 0, px: 1 }}
+          sx={{ whiteSpace: "nowrap", minWidth: 0, px: 1 }}
         >
           Replay
         </Button>
         <Button
           size="small"
-          variant={recordedStepsOpen ? 'contained' : 'outlined'}
-          startIcon={<FiberManualRecordIcon color={isRecording ? 'error' : 'inherit'} />}
+          variant={recordedStepsOpen ? "contained" : "outlined"}
+          startIcon={
+            <FiberManualRecordIcon color={isRecording ? "error" : "inherit"} />
+          }
           disabled={!isRecording && recordedSteps.length === 0}
           onClick={() => setRecordedStepsOpen((open) => !open)}
-          sx={{ whiteSpace: 'nowrap', minWidth: 0, px: 1 }}
+          sx={{ whiteSpace: "nowrap", minWidth: 0, px: 1 }}
         >
-          Recorded {recordedSteps.length ? `(${recordedSteps.length})` : ''}
+          Recorded {recordedSteps.length ? `(${recordedSteps.length})` : ""}
         </Button>
-        {isPlaybackPaused && <Chip size="small" color="warning" label="Paused" />}
-        {isRunningRecording && <Chip size="small" color="primary" label={`Step ${runningStepId ?? ''}`} />}
+        {isPlaybackPaused && (
+          <Chip size="small" color="warning" label="Paused" />
+        )}
+        {isRunningRecording && (
+          <Chip
+            size="small"
+            color="primary"
+            label={`Step ${runningStepId ?? ""}`}
+          />
+        )}
       </Box>
 
       {/* Session creation error banner */}
@@ -784,7 +1010,7 @@ export default function App() {
       {isPlaygroundMode && !session && !mcpStartUrl && (
         <Alert
           severity="info"
-          sx={{ mx: 0.5, mt: 0.5, py: 0.5, alignItems: 'center' }}
+          sx={{ mx: 0.5, mt: 0.5, py: 0.5, alignItems: "center" }}
           action={
             <Button
               size="small"
@@ -796,14 +1022,21 @@ export default function App() {
             </Button>
           }
         >
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 360 }}>
-            <Typography variant="body2">Enter a URL to start recording.</Typography>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{ minWidth: 360 }}
+          >
+            <Typography variant="body2">
+              Enter a URL to start recording.
+            </Typography>
             <TextField
               size="small"
               value={mcpStartUrlInput}
               onChange={(event) => setMcpStartUrlInput(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') {
+                if (event.key === "Enter") {
                   handleStartMcpSession();
                 }
               }}
@@ -814,7 +1047,7 @@ export default function App() {
         </Alert>
       )}
 
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <Box sx={{ display: "flex", flex: 1, minHeight: 0 }}>
         {/* Browser canvas */}
         <BrowserViewer
           connectionState={connectionState}
@@ -822,42 +1055,59 @@ export default function App() {
           remoteHeight={remoteHeight}
           latestFrame={latestFrame}
           sendEvent={sendEvent as (e: ClientToServerEvent) => void}
-          onUserInput={() => requestPlaybackPause('Playback will pause after your interaction')}
+          onUserInput={() =>
+            requestPlaybackPause("Playback will pause after your interaction")
+          }
         />
 
         <Box
           sx={{
-            width: playbackControlsOpen || loadedRecordingOpen || recordedStepsOpen ? 340 : 0,
-            borderLeft: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            display: 'flex',
-            flexDirection: 'column',
+            width:
+              playbackControlsOpen || loadedRecordingOpen || recordedStepsOpen
+                ? 340
+                : 0,
+            borderLeft: "1px solid",
+            borderColor: "divider",
+            bgcolor: "background.paper",
+            display: "flex",
+            flexDirection: "column",
             minHeight: 0,
-            overflow: 'hidden',
-            transition: 'width 160ms ease',
+            overflow: "hidden",
+            transition: "width 160ms ease",
           }}
         >
-          <Box sx={{ overflow: 'auto', minHeight: 0 }}>
+          <Box sx={{ overflow: "auto", minHeight: 0 }}>
             <Box
               sx={{
                 px: 0.75,
                 py: 0.4,
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-                display: 'flex',
-                alignItems: 'center',
+                borderBottom: "1px solid",
+                borderColor: "divider",
+                display: "flex",
+                alignItems: "center",
                 gap: 0.5,
               }}
             >
-              <IconButton size="small" onClick={() => setPlaybackControlsOpen((open) => !open)} sx={{ p: 0.25 }}>
-                {playbackControlsOpen ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+              <IconButton
+                size="small"
+                onClick={() => setPlaybackControlsOpen((open) => !open)}
+                sx={{ p: 0.25 }}
+              >
+                {playbackControlsOpen ? (
+                  <ExpandMoreIcon />
+                ) : (
+                  <ChevronRightIcon />
+                )}
               </IconButton>
               <Typography variant="subtitle2" sx={{ flex: 1 }}>
                 Replay controls
               </Typography>
-              {isPlaybackPaused && <Chip size="small" color="warning" label="Paused" />}
-              {isRunningRecording && <Chip size="small" color="primary" label="Running" />}
+              {isPlaybackPaused && (
+                <Chip size="small" color="warning" label="Paused" />
+              )}
+              {isRunningRecording && (
+                <Chip size="small" color="primary" label="Running" />
+              )}
             </Box>
             <Collapse in={playbackControlsOpen}>
               <Stack spacing={0.75} sx={{ p: 0.75 }}>
@@ -868,8 +1118,12 @@ export default function App() {
                   onChange={(_, value) => setPlaybackProject(value)}
                   loading={isLoadingPlaybackProjects}
                   getOptionLabel={(option) => option.label}
-                  isOptionEqualToValue={(option, value) => option.value === value.value}
-                  renderInput={(params) => <TextField {...params} label="Project" />}
+                  isOptionEqualToValue={(option, value) =>
+                    option.value === value.value
+                  }
+                  renderInput={(params) => (
+                    <TextField {...params} label="Project" />
+                  )}
                   slotProps={{
                     paper: { sx: { fontSize: 13 } },
                   }}
@@ -886,16 +1140,33 @@ export default function App() {
                   }}
                   loading={isLoadingRecordingFiles}
                   getOptionLabel={(option) => option}
-                  renderInput={(params) => <TextField {...params} label="Recording file" />}
-                  noOptionsText={playbackProject ? 'No recordings found' : 'Select a project first'}
+                  renderInput={(params) => (
+                    <TextField {...params} label="Recording file" />
+                  )}
+                  noOptionsText={
+                    playbackProject
+                      ? "No recordings found"
+                      : "Select a project first"
+                  }
                 />
                 <Stack direction="row" spacing={0.75}>
                   <Button
                     size="small"
                     variant="outlined"
-                    disabled={!session || !selectedRecording || isLoadingRecording || isRunningRecording}
+                    disabled={
+                      !session ||
+                      !selectedRecording ||
+                      isLoadingRecording ||
+                      isRunningRecording
+                    }
                     onClick={handleLoadRecording}
-                    startIcon={isLoadingRecording ? <CircularProgress size={14} /> : <FolderOpenIcon />}
+                    startIcon={
+                      isLoadingRecording ? (
+                        <CircularProgress size={14} />
+                      ) : (
+                        <FolderOpenIcon />
+                      )
+                    }
                     fullWidth
                   >
                     Load
@@ -905,17 +1176,29 @@ export default function App() {
                     variant="contained"
                     disabled={!loadedRecording || isRunningRecording}
                     onClick={handleRunLoadedRecording}
-                    startIcon={isRunningRecording ? <CircularProgress size={14} /> : <PlayArrowIcon />}
+                    startIcon={
+                      isRunningRecording ? (
+                        <CircularProgress size={14} />
+                      ) : (
+                        <PlayArrowIcon />
+                      )
+                    }
                     fullWidth
                   >
-                    {isPlaybackPaused ? 'Resume' : loadedRecording ? `Run ${loadedStepCount}` : 'Run'}
+                    {isPlaybackPaused
+                      ? "Resume"
+                      : loadedRecording
+                      ? `Run ${loadedStepCount}`
+                      : "Run"}
                   </Button>
                   <Button
                     size="small"
                     color="warning"
                     variant="outlined"
                     disabled={!isRunningRecording}
-                    onClick={() => requestPlaybackPause('Playback pause requested')}
+                    onClick={() =>
+                      requestPlaybackPause("Playback pause requested")
+                    }
                     startIcon={<PauseIcon />}
                   >
                     Pause
@@ -929,24 +1212,39 @@ export default function App() {
               sx={{
                 px: 0.75,
                 py: 0.4,
-                display: 'flex',
-                alignItems: 'center',
+                display: "flex",
+                alignItems: "center",
                 gap: 0.5,
-                borderBottom: loadedRecordingOpen ? '1px solid' : 0,
-                borderColor: 'divider',
+                borderBottom: loadedRecordingOpen ? "1px solid" : 0,
+                borderColor: "divider",
               }}
             >
-              <IconButton size="small" disabled={!loadedRecording} onClick={() => setLoadedRecordingOpen((open) => !open)} sx={{ p: 0.25 }}>
-                {loadedRecordingOpen ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+              <IconButton
+                size="small"
+                disabled={!loadedRecording}
+                onClick={() => setLoadedRecordingOpen((open) => !open)}
+                sx={{ p: 0.25 }}
+              >
+                {loadedRecordingOpen ? (
+                  <ExpandMoreIcon />
+                ) : (
+                  <ChevronRightIcon />
+                )}
               </IconButton>
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2">Loaded recording</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {loadedRecording ? selectedRecording : 'Load a recording to inspect and replay steps'}
+                  {loadedRecording
+                    ? selectedRecording
+                    : "Load a recording to inspect and replay steps"}
                 </Typography>
               </Box>
-              {loadedRecording && <Chip size="small" label={`${loadedStepCount} steps`} />}
-              {typeSteps.length > 0 && <Chip size="small" label={`${typeSteps.length} inputs`} />}
+              {loadedRecording && (
+                <Chip size="small" label={`${loadedStepCount} steps`} />
+              )}
+              {typeSteps.length > 0 && (
+                <Chip size="small" label={`${typeSteps.length} inputs`} />
+              )}
             </Box>
             <Collapse in={loadedRecordingOpen}>
               <List dense disablePadding>
@@ -958,12 +1256,20 @@ export default function App() {
                   </Box>
                 ) : (
                   flattenedSteps.map(({ tabId, step, index }) => {
-                    const stepId = typeof step.id === 'number' ? step.id : undefined;
+                    const stepId =
+                      typeof step.id === "number" ? step.id : undefined;
                     const isRunning = runningStepId === stepId;
-                    const isDone = stepId !== undefined && executedStepIds.has(stepId);
-                    const disabled = isRunningRecording || step.shouldRun === false || stepId === undefined;
-                    const isType = step.type === 'TYPE' && stepId !== undefined;
-                    const displayValue = stepId !== undefined ? editedTypeValues[stepId] ?? step.text ?? '' : step.text ?? '';
+                    const isDone =
+                      stepId !== undefined && executedStepIds.has(stepId);
+                    const disabled =
+                      isRunningRecording ||
+                      step.shouldRun === false ||
+                      stepId === undefined;
+                    const isType = step.type === "TYPE" && stepId !== undefined;
+                    const displayValue =
+                      stepId !== undefined
+                        ? editedTypeValues[stepId] ?? step.text ?? ""
+                        : step.text ?? "";
                     const isEditing = isType && editingStepId === stepId;
                     const needsValue = isType && valueRequiredStepId === stepId;
 
@@ -971,34 +1277,71 @@ export default function App() {
                       <Box
                         key={`${tabId}-${stepId ?? index}`}
                         sx={{
-                          borderBottom: '1px solid',
-                          borderColor: needsValue ? 'warning.main' : 'divider',
-                          bgcolor: needsValue ? 'rgba(237, 108, 2, 0.08)' : 'transparent',
+                          borderBottom: "1px solid",
+                          borderColor: needsValue ? "warning.main" : "divider",
+                          bgcolor: needsValue
+                            ? "rgba(237, 108, 2, 0.08)"
+                            : "transparent",
                         }}
                       >
                         <ListItemButton
                           disabled={disabled}
                           selected={isRunning}
                           onClick={() => handleRunStep(tabId, step)}
-                          sx={{ alignItems: 'flex-start', py: 0.5, px: 1, pr: isType ? 0.25 : 1 }}
+                          sx={{
+                            alignItems: "flex-start",
+                            py: 0.5,
+                            px: 1,
+                            pr: isType ? 0.25 : 1,
+                          }}
                         >
                           <ListItemText
                             primary={
-                              <Stack direction="row" spacing={1} alignItems="center">
-                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                  #{stepId ?? index + 1} {step.type || 'STEP'}
+                              <Stack
+                                direction="row"
+                                spacing={1}
+                                alignItems="center"
+                              >
+                                <Typography
+                                  variant="body2"
+                                  sx={{ fontWeight: 600 }}
+                                >
+                                  #{stepId ?? index + 1} {step.type || "STEP"}
                                 </Typography>
                                 {isRunning && <CircularProgress size={12} />}
-                                {isDone && <Chip size="small" color="success" label="done" />}
-                                {step.shouldRun === false && <Chip size="small" label="skipped" />}
-                                {needsValue && <Chip size="small" color="warning" label="value required" />}
+                                {isDone && (
+                                  <Chip
+                                    size="small"
+                                    color="success"
+                                    label="done"
+                                  />
+                                )}
+                                {step.shouldRun === false && (
+                                  <Chip size="small" label="skipped" />
+                                )}
+                                {needsValue && (
+                                  <Chip
+                                    size="small"
+                                    color="warning"
+                                    label="value required"
+                                  />
+                                )}
                               </Stack>
                             }
                             secondary={
-                              <Typography variant="caption" color="text.secondary" component="span">
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                component="span"
+                              >
                                 {tabId}
-                                {typeof step.label === 'string' && step.label ? ` · ${step.label}` : ''}
-                                {typeof displayValue === 'string' && displayValue ? ` · "${displayValue}"` : ''}
+                                {typeof step.label === "string" && step.label
+                                  ? ` · ${step.label}`
+                                  : ""}
+                                {typeof displayValue === "string" &&
+                                displayValue
+                                  ? ` · "${displayValue}"`
+                                  : ""}
                               </Typography>
                             }
                           />
@@ -1012,7 +1355,9 @@ export default function App() {
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
-                                    setEditingStepId((current) => (current === stepId ? null : stepId));
+                                    setEditingStepId((current) =>
+                                      current === stepId ? null : stepId,
+                                    );
                                   }}
                                 >
                                   <EditIcon fontSize="small" />
@@ -1031,14 +1376,26 @@ export default function App() {
                               size="small"
                               fullWidth
                               autoFocus={needsValue}
-                              label={typeof step.label === 'string' && step.label ? step.label : `Step ${stepId} value`}
-                              type={step.isPassword === true ? 'password' : 'text'}
-                              value={editedTypeValues[stepId] ?? ''}
+                              label={
+                                typeof step.label === "string" && step.label
+                                  ? step.label
+                                  : `Step ${stepId} value`
+                              }
+                              type={
+                                step.isPassword === true ? "password" : "text"
+                              }
+                              value={editedTypeValues[stepId] ?? ""}
                               error={needsValue}
                               onChange={(event) => {
                                 const nextValue = event.target.value;
-                                setEditedTypeValues((prev) => ({ ...prev, [stepId]: nextValue }));
-                                if (nextValue.trim() && valueRequiredStepId === stepId) {
+                                setEditedTypeValues((prev) => ({
+                                  ...prev,
+                                  [stepId]: nextValue,
+                                }));
+                                if (
+                                  nextValue.trim() &&
+                                  valueRequiredStepId === stepId
+                                ) {
                                   setValueRequiredStepId(null);
                                   setIsPlaybackPaused(false);
                                   pauseRequestedRef.current = false;
@@ -1046,21 +1403,31 @@ export default function App() {
                               }}
                               helperText={
                                 needsValue
-                                  ? 'Enter a value, then click Run/Resume to continue.'
-                                  : typeof step.description === 'string' && step.description
-                                    ? step.description
-                                    : 'This value is used when replaying this TYPE step.'
+                                  ? "Enter a value, then click Run/Resume to continue."
+                                  : typeof step.description === "string" &&
+                                    step.description
+                                  ? step.description
+                                  : "This value is used when replaying this TYPE step."
                               }
                               InputProps={{
                                 endAdornment: (
                                   <Stack direction="row" spacing={0.25}>
-                                    <IconButton size="small" onClick={() => setEditingStepId(null)}>
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => setEditingStepId(null)}
+                                    >
                                       <DoneIcon fontSize="small" />
                                     </IconButton>
                                     <IconButton
                                       size="small"
                                       onClick={() => {
-                                        setEditedTypeValues((prev) => ({ ...prev, [stepId]: typeof step.text === 'string' ? step.text : '' }));
+                                        setEditedTypeValues((prev) => ({
+                                          ...prev,
+                                          [stepId]:
+                                            typeof step.text === "string"
+                                              ? step.text
+                                              : "",
+                                        }));
                                         setEditingStepId(null);
                                       }}
                                     >
@@ -1084,11 +1451,11 @@ export default function App() {
               sx={{
                 px: 0.75,
                 py: 0.4,
-                display: 'flex',
-                alignItems: 'center',
+                display: "flex",
+                alignItems: "center",
                 gap: 0.5,
-                borderBottom: recordedStepsOpen ? '1px solid' : 0,
-                borderColor: 'divider',
+                borderBottom: recordedStepsOpen ? "1px solid" : 0,
+                borderColor: "divider",
               }}
             >
               <IconButton
@@ -1106,7 +1473,11 @@ export default function App() {
                 </Typography>
               </Box>
               <Chip size="small" label={`${recordedSteps.length}`} />
-              <Button size="small" disabled={!isRecording} onClick={handleOpenSaveRecording}>
+              <Button
+                size="small"
+                disabled={!isRecording}
+                onClick={handleOpenSaveRecording}
+              >
                 Save
               </Button>
             </Box>
@@ -1115,23 +1486,39 @@ export default function App() {
                 {recordedSteps.length === 0 ? (
                   <Box sx={{ p: 2 }}>
                     <Typography variant="body2" color="text.secondary">
-                      {isRecording ? 'Interact with the browser to see recorded steps.' : 'Start recording to preview captured steps.'}
+                      {isRecording
+                        ? "Interact with the browser to see recorded steps."
+                        : "Start recording to preview captured steps."}
                     </Typography>
                   </Box>
                 ) : (
                   recordedSteps.map((step, index) => (
-                    <ListItemButton key={`${step.timestamp ?? index}-${index}`} disabled sx={{ py: 0.5, px: 1 }}>
+                    <ListItemButton
+                      key={`${step.timestamp ?? index}-${index}`}
+                      disabled
+                      sx={{ py: 0.5, px: 1 }}
+                    >
                       <ListItemText
                         primary={
                           <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            #{index + 1} {step.type || 'STEP'}
+                            #{index + 1} {step.type || "STEP"}
                           </Typography>
                         }
                         secondary={
-                          <Typography variant="caption" color="text.secondary" component="span">
-                            {step.selector ? `${step.role || 'selector'}: ${step.selector}` : ''}
-                            {step.text ? ` · "${step.text}"` : ''}
-                            {step.coordinates ? ` · (${Math.round(step.coordinates.x)}, ${Math.round(step.coordinates.y)})` : ''}
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            component="span"
+                          >
+                            {step.selector
+                              ? `${step.role || "selector"}: ${step.selector}`
+                              : ""}
+                            {step.text ? ` · "${step.text}"` : ""}
+                            {step.coordinates
+                              ? ` · (${Math.round(
+                                  step.coordinates.x,
+                                )}, ${Math.round(step.coordinates.y)})`
+                              : ""}
                           </Typography>
                         }
                       />
@@ -1144,18 +1531,33 @@ export default function App() {
         </Box>
       </Box>
 
-      <Dialog open={stopRecordingDialogOpen} onClose={() => setStopRecordingDialogOpen(false)} fullWidth maxWidth="xs">
+      <Dialog
+        open={stopRecordingDialogOpen}
+        onClose={() => setStopRecordingDialogOpen(false)}
+        fullWidth
+        maxWidth="xs"
+      >
         <DialogTitle>Stop recording?</DialogTitle>
         <DialogContent>
-          Do you want to save the steps recorded in this recording window, or discard them?
+          Do you want to save the steps recorded in this recording window, or
+          discard them?
         </DialogContent>
         <DialogActions>
-          <Button color="error" onClick={handleDiscardRecording}>Discard</Button>
-          <Button variant="contained" onClick={handleSaveAndStopRecording}>Save steps</Button>
+          <Button color="error" onClick={handleDiscardRecording}>
+            Discard
+          </Button>
+          <Button variant="contained" onClick={handleSaveAndStopRecording}>
+            Save steps
+          </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={saveDialogOpen}
+        onClose={() => setSaveDialogOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Save recording</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
@@ -1165,7 +1567,9 @@ export default function App() {
               onChange={(_, value) => setSaveProject(value)}
               loading={isLoadingProjects}
               getOptionLabel={(option) => option.label}
-              isOptionEqualToValue={(option, value) => option.value === value.value}
+              isOptionEqualToValue={(option, value) =>
+                option.value === value.value
+              }
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -1211,7 +1615,7 @@ export default function App() {
             onClick={handleSaveRecording}
             disabled={isSaving || !session || !isRecording || !saveProject}
           >
-            {isSaving ? 'Saving…' : 'Save'}
+            {isSaving ? "Saving…" : "Save"}
           </Button>
         </DialogActions>
       </Dialog>

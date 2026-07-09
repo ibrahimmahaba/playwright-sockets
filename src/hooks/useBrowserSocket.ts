@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ClientToServerEvent, ConnectionState, ServerToClientEvent } from '../types/browserEvents';
+import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  ClientToServerEvent,
+  ConnectionState,
+  ServerToClientEvent,
+} from "../types/browserEvents";
 
 interface UseBrowserSocketOptions {
   wsUrl: string | null;
@@ -13,7 +17,11 @@ interface UseBrowserSocketReturn {
   sendEvent: (event: ClientToServerEvent) => void;
 }
 
-const WS_BASE = import.meta.env.VITE_WS_BASE_URL || `ws://${window.location.host}/Monolith`;
+const MODULE_PATH = process.env.MODULE || "/Monolith";
+const WS_PROTOCOL = window.location.protocol === "https:" ? "wss:" : "ws:";
+const WS_BASE =
+  import.meta.env.VITE_WS_BASE_URL ||
+  `${WS_PROTOCOL}//${window.location.host}${MODULE_PATH}`;
 
 export function useBrowserSocket({
   wsUrl,
@@ -21,14 +29,23 @@ export function useBrowserSocket({
   onNavigated,
   onError,
 }: UseBrowserSocketOptions): UseBrowserSocketReturn {
-  const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>("idle");
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Build the full WS URL from the relative path returned by the REST API
   const buildFullWsUrl = useCallback((path: string): string => {
-    // If VITE_WS_BASE_URL is defined use it, otherwise derive from current location
-    const base = WS_BASE.replace(/\/$/, '');
+    if (/^wss?:\/\//i.test(path)) {
+      return path;
+    }
+
+    if (/^https?:\/\//i.test(path)) {
+      return path.replace(/^http/i, "ws");
+    }
+
+    // If VITE_WS_BASE_URL is defined use it, otherwise derive from current location.
+    const base = WS_BASE.replace(/\/$/, "");
     return `${base}${path}`;
   }, []);
 
@@ -36,26 +53,26 @@ export function useBrowserSocket({
     if (!wsUrl) return;
 
     const fullUrl = buildFullWsUrl(wsUrl);
-    setConnectionState('connecting');
+    setConnectionState("connecting");
 
     const ws = new WebSocket(fullUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setConnectionState('connected');
+      setConnectionState("connected");
     };
 
     ws.onmessage = (evt: MessageEvent) => {
       try {
         const msg: ServerToClientEvent = JSON.parse(evt.data as string);
         switch (msg.type) {
-          case 'frame':
+          case "frame":
             onFrame(msg.data, msg.metadata.width, msg.metadata.height);
             break;
-          case 'navigated':
+          case "navigated":
             onNavigated(msg.url);
             break;
-          case 'error':
+          case "error":
             onError(msg.message);
             break;
         }
@@ -65,12 +82,12 @@ export function useBrowserSocket({
     };
 
     ws.onclose = () => {
-      setConnectionState('closed');
+      setConnectionState("closed");
       wsRef.current = null;
     };
 
     ws.onerror = () => {
-      setConnectionState('error');
+      setConnectionState("error");
     };
 
     return () => {

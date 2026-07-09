@@ -1,9 +1,6 @@
 # Dependencies
 node_modules/
 
-# Build output (uploaded to SEMOSS separately)
-../../portals/
-
 # Environment files (contain secrets)
 .env
 .env.local
