@@ -6,11 +6,48 @@ import type {
   RemoteBrowserRecordedStep,
   RecordingProjectOption,
   ReplayStepResult,
+  RoomRecordingSaveResponse,
   SaveRecordingRequest,
   SaveRecordingResponse,
+  StepsEnvelope,
 } from '../types/browserEvents';
 
-const API_BASE = `${process.env.MODULE || '/Monolith'}/api/browser-sessions`;
+const MODULE_PATH = process.env.MODULE || '/Monolith';
+const API_BASE = `${MODULE_PATH}/api/browser-sessions`;
+
+let csrfToken = '';
+
+async function getCsrfToken(): Promise<string> {
+  if (csrfToken) return csrfToken;
+
+  const response = await fetch(`${MODULE_PATH}/api/config/fetchCsrf`, {
+    credentials: 'include',
+    headers: {
+      'X-CSRF-Token': 'fetch',
+    },
+  });
+
+  csrfToken = response.headers.get('X-CSRF-Token') || response.headers.get('x-csrf-token') || '';
+  return csrfToken;
+}
+
+async function fetchWithCsrf(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const method = (init.method || 'GET').toUpperCase();
+  const headers = new Headers(init.headers);
+
+  if (method !== 'GET' && method !== 'HEAD' && !headers.has('X-CSRF-Token')) {
+    const token = await getCsrfToken();
+    if (token) {
+      headers.set('X-CSRF-Token', token);
+    }
+  }
+
+  return fetch(input, {
+    credentials: 'include',
+    ...init,
+    headers,
+  });
+}
 
 interface UseRemoteBrowserSessionReturn {
   session: RemoteBrowserSessionInfo | null;
@@ -26,6 +63,12 @@ interface UseRemoteBrowserSessionReturn {
   ) => Promise<RemoteBrowserSessionInfo | null>;
   closeSession: () => Promise<void>;
   saveRecording: (payload: SaveRecordingRequest) => Promise<SaveRecordingResponse | null>;
+  getRecordingEnvelope: () => Promise<StepsEnvelope | null>;
+  saveRoomRecording: (
+    insightId: string,
+    fileName: string,
+    envelope: StepsEnvelope,
+  ) => Promise<RoomRecordingSaveResponse | null>;
   listRecordingProjects: (insightId: string) => Promise<RecordingProjectOption[]>;
   listRecordingFiles: (insightId: string, projectId: string) => Promise<string[]>;
   loadRecording: (insightId: string, projectId: string, fileName: string) => Promise<LoadedRecording | null>;
@@ -60,9 +103,8 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
       setIsCreating(true);
       setError(null);
       try {
-        const res = await fetch(API_BASE, {
+        const res = await fetchWithCsrf(API_BASE, {
           method: 'POST',
-          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url, viewportWidth: width, viewportHeight: height, preserveExisting }),
         });
@@ -91,9 +133,8 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     const s = sessionRef.current;
     if (!s) return;
     try {
-      await fetch(`${API_BASE}/${s.sessionId}`, {
+      await fetchWithCsrf(`${API_BASE}/${s.sessionId}`, {
         method: 'DELETE',
-        credentials: 'include',
       });
     } catch {
       // Best-effort close
@@ -112,9 +153,8 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     setIsSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/${s.sessionId}/recording/save`, {
+      const res = await fetchWithCsrf(`${API_BASE}/${s.sessionId}/recording/save`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -134,6 +174,77 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     }
   }, []);
 
+  const getRecordingEnvelope = useCallback(async (): Promise<StepsEnvelope | null> => {
+    const s = sessionRef.current;
+    if (!s) {
+      setError('No active recording session');
+      return null;
+    }
+
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/${s.sessionId}/recording`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(errBody.error || `HTTP ${res.status}`);
+      }
+
+      const output = await res.json();
+      if (output && typeof output === 'object' && !Array.isArray(output) && 'steps' in output) {
+        return output as StepsEnvelope;
+      }
+
+      throw new Error('Unexpected response while loading recording envelope');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to load recording envelope';
+      setError(msg);
+      return null;
+    }
+  }, []);
+
+  const saveRoomRecording = useCallback(
+    async (insightId: string, fileName: string, envelope: StepsEnvelope): Promise<RoomRecordingSaveResponse | null> => {
+      if (!insightId) {
+        setError('Insight ID is required to save room recording');
+        return null;
+      }
+
+      const normalizedName = fileName.endsWith('.json') ? fileName : `${fileName}.json`;
+      const relativePath = `playwright/${normalizedName}`;
+      const content = JSON.stringify(envelope, null, 2);
+
+      setIsSaving(true);
+      setError(null);
+      try {
+        const pixel = `SaveInsightAssets(filePath=[${JSON.stringify(relativePath)}], content=[${JSON.stringify(content)}]);`;
+        const res = await runPixel(pixel, insightId);
+        const errors = res.pixelReturn
+          ?.filter((item) => String(item.operationType || '').includes('ERROR'))
+          .map((item) => typeof item.output === 'string' ? item.output : JSON.stringify(item.output));
+        if (errors?.length) {
+          throw new Error(errors.join('\n'));
+        }
+
+        return {
+          saved: true,
+          fileName: normalizedName,
+          roomPath: `/${relativePath}`,
+        };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to save recording to room';
+        setError(msg);
+        return null;
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [],
+  );
+
   const listRecordingProjects = useCallback(async (insightId: string): Promise<RecordingProjectOption[]> => {
     if (!insightId) {
       setError('Insight ID is required to list recording projects');
@@ -151,7 +262,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
       }
 
       return output
-        .map((project: { project_display_name?: string; project_name?: string; project_id?: string }) => {
+        .map((project: { project_display_name?: string; project_name?: string; project_id?: string }): RecordingProjectOption | null => {
           const value = project.project_id;
           if (!value) {
             return null;
@@ -299,6 +410,8 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     createSession,
     closeSession,
     saveRecording,
+    getRecordingEnvelope,
+    saveRoomRecording,
     listRecordingProjects,
     listRecordingFiles,
     loadRecording,

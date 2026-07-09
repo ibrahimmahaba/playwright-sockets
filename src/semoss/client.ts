@@ -1,0 +1,122 @@
+import { Env, Insight } from '@semoss/sdk';
+import type { McpToolContext } from '../types/browserEvents';
+
+type EnvWithTool = typeof Env & { TOOL?: unknown };
+type InsightWithMcpResponse = typeof insight & {
+  actions: typeof insight.actions & {
+    sendMCPResponseToPlayground?: (
+      response: string,
+      status: 'success' | 'error',
+      executedParameters: Record<string, unknown>,
+    ) => void;
+  };
+};
+
+const semossEnvScript = document.getElementById('semoss-env');
+
+if (semossEnvScript?.textContent) {
+  try {
+    Env.update(JSON.parse(semossEnvScript.textContent));
+  } catch (error) {
+    console.warn('Unable to parse SEMOSS environment payload', error);
+  }
+}
+
+export const insight = new Insight();
+
+let initialized = false;
+let toolContext = normalizeToolContext((Env as EnvWithTool).TOOL);
+const subscribers = new Set<(context: McpToolContext | null) => void>();
+
+function normalizeToolContext(rawTool: unknown): McpToolContext | null {
+  if (!rawTool || typeof rawTool !== 'object') {
+    return null;
+  }
+
+  const tool = rawTool as Record<string, unknown>;
+  const parameters =
+    tool.parameters && typeof tool.parameters === 'object' && !Array.isArray(tool.parameters)
+      ? tool.parameters as Record<string, unknown>
+      : {};
+
+  const executedParameters =
+    tool.executedParameters && typeof tool.executedParameters === 'object' && !Array.isArray(tool.executedParameters)
+      ? tool.executedParameters as Record<string, unknown>
+      : undefined;
+
+  return {
+    type: typeof tool.type === 'string' ? tool.type : 'MCP',
+    id: typeof tool.id === 'string' ? tool.id : '',
+    name: typeof tool.name === 'string' ? tool.name : typeof tool.original_name === 'string' ? tool.original_name : '',
+    originalName: typeof tool.original_name === 'string' ? tool.original_name : typeof tool.name === 'string' ? tool.name : '',
+    message: typeof tool.message === 'string' ? tool.message : '',
+    roomId: typeof tool.roomId === 'string' ? tool.roomId : '',
+    parameters,
+    executedParameters,
+    toolResponse: tool.tool_response,
+  };
+}
+
+function setToolContext(nextToolContext: unknown) {
+  toolContext = normalizeToolContext(nextToolContext);
+  subscribers.forEach((subscriber) => {
+    try {
+      subscriber(toolContext);
+    } catch (error) {
+      console.warn('Unable to notify MCP tool context subscriber', error);
+    }
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', (event) => {
+    if (!event?.data || event.data.type !== 'SMSS_INIT_TOOL') {
+      return;
+    }
+    setToolContext(event.data.tool);
+  });
+}
+
+export async function initSemoss(): Promise<McpToolContext | null> {
+  if (initialized) {
+    return toolContext;
+  }
+
+  try {
+    const initializedContext = await insight.initialize();
+    setToolContext((initializedContext as { tool?: unknown } | undefined)?.tool || (Env as EnvWithTool).TOOL || toolContext);
+  } catch (error) {
+    console.warn('SEMOSS initialization failed; continuing without MCP context', error);
+  } finally {
+    initialized = true;
+  }
+
+  return toolContext;
+}
+
+export function getMcpToolContext(): McpToolContext | null {
+  return toolContext;
+}
+
+export function getSemossInsightId(): string {
+  return insight.insightId;
+}
+
+export function subscribeToMcpToolContext(listener: (context: McpToolContext | null) => void): () => void {
+  subscribers.add(listener);
+  listener(toolContext);
+  return () => subscribers.delete(listener);
+}
+
+export function sendMcpResponseToPlayground(
+  response: unknown,
+  toolStatus: 'success' | 'error' = 'success',
+  executedParameters: Record<string, unknown> = {},
+): void {
+  const payload = typeof response === 'string' ? response : JSON.stringify(response);
+  const action = (insight as InsightWithMcpResponse).actions.sendMCPResponseToPlayground;
+  if (!action) {
+    throw new Error('SEMOSS SDK does not expose sendMCPResponseToPlayground');
+  }
+  action(payload, toolStatus, executedParameters);
+}

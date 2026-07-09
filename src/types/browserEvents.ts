@@ -58,6 +58,15 @@ export interface SaveRecordingResponse {
   filePath: string;
 }
 
+export interface RecordingMeta {
+  id?: string;
+  title?: string;
+  description?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  intent?: string;
+}
+
 export interface RecordingProjectOption {
   label: string;
   value: string;
@@ -77,6 +86,30 @@ export interface LoadedRecording {
   version?: string;
   meta?: Record<string, unknown>;
   steps: Record<string, LoadedRecordingStep[] | LoadedRecordingStep[][]>;
+}
+
+export interface StepsEnvelope {
+  version: string;
+  meta?: RecordingMeta;
+  steps: Record<string, LoadedRecordingStep[] | LoadedRecordingStep[][]>;
+}
+
+export interface RoomRecordingSaveResponse {
+  saved: boolean;
+  fileName: string;
+  roomPath: string;
+}
+
+export interface McpToolContext {
+  type: string;
+  id: string;
+  name: string;
+  originalName: string;
+  message: string;
+  roomId: string;
+  parameters: Record<string, unknown>;
+  toolResponse?: unknown;
+  executedParameters?: Record<string, unknown>;
 }
 
 export interface ReplayStepResult {

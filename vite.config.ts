@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     base: './',
     build: {
-      outDir: '../../portals',
+      outDir: 'portals',
       emptyOutDir: true,
     },
     define: {

@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "last_modified_date": "2026-07-09",
+    "source_file": "assets/py/mcp_driver.py",
+    "generated_by": "manual"
+  },
+  "tools": [
+    {
+      "name": "open_playwright_sockets",
+      "title": "Open Playwright Sockets",
+      "description": "Open the Playwright Sockets remote browser app, navigate to start_url, begin recording, and save the recording into the current Playground room when returned. If the user did not provide a URL, ask for one before calling this tool.",
+      "inputSchema": {
+        "type": "object",
+        "title": "Open Playwright Sockets Arguments",
+        "properties": {
+          "start_url": {
+            "title": "Start URL",
+            "description": "URL to open in the Playwright Sockets browser.",
+            "type": "string"
+          },
+          "recording_name_hint": {
+            "title": "Recording Name Hint",
+            "description": "Optional short name hint for the saved recording.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_url"
+        ]
+      },
+      "_meta": {
+        "generated_on": "2026-07-09",
+        "SMSS_MCP_EXECUTION": "ask",
+        "SMSS_MCP_UI": {
+          "displayLocation": "sidebar",
+          "resourceURI": "/"
+        },
+        "SMSS_FUNCTION_NAME": "open_playwright_sockets"
+      },
+      "_type": "python"
+    }
+  ]
+}

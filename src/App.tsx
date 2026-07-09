@@ -41,8 +41,88 @@ import type {
   ClientToServerEvent,
   LoadedRecording,
   LoadedRecordingStep,
+  McpToolContext,
   RemoteBrowserRecordedStep,
+  StepsEnvelope,
 } from './types/browserEvents';
+import {
+  getSemossInsightId,
+  initSemoss,
+  sendMcpResponseToPlayground,
+  subscribeToMcpToolContext,
+} from './semoss/client';
+
+function flattenEnvelopeSteps(envelope: StepsEnvelope): Array<Record<string, unknown>> {
+  return Object.values(envelope.steps ?? {}).flatMap((tabSteps) => {
+    const maybeNested = tabSteps as Array<Record<string, unknown> | Record<string, unknown>[]>;
+    return maybeNested.flatMap((item) => (Array.isArray(item) ? item : [item]));
+  });
+}
+
+function sanitizeFilePart(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 96);
+}
+
+function buildRecordingFileName(envelope: StepsEnvelope, hint = ''): string {
+  const steps = flattenEnvelopeSteps(envelope);
+  const firstUrl = steps.find((step) => typeof step.url === 'string')?.url;
+  let host = 'browser';
+  if (typeof firstUrl === 'string' && firstUrl) {
+    try {
+      host = new URL(firstUrl).hostname.replace(/^www\./, '').split('.')[0] || host;
+    } catch {
+      host = firstUrl.replace(/^https?:\/\//, '').split('/')[0] || host;
+    }
+  }
+
+  const typedText = steps
+    .filter((step) => step.type === 'TYPE' && typeof step.text === 'string')
+    .map((step) => String(step.text))
+    .join(' ')
+    .slice(0, 48);
+  const base = sanitizeFilePart([hint, host, typedText].filter(Boolean).join(' ')) || 'playwright-recording';
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+  return `${base}-${stamp}.json`;
+}
+
+function buildRecordingTitle(envelope: StepsEnvelope, hint = ''): string {
+  const steps = flattenEnvelopeSteps(envelope);
+  const firstUrl = steps.find((step) => typeof step.url === 'string')?.url;
+  const typedText = steps.find((step) => step.type === 'TYPE' && typeof step.text === 'string')?.text;
+  const parts = [hint, firstUrl, typedText].filter((part) => typeof part === 'string' && part.trim());
+  return String(parts[0] || 'Playwright browser recording').slice(0, 120);
+}
+
+function enrichEnvelopeForRoomSave(
+  envelope: StepsEnvelope,
+  sessionId: string,
+  hint = '',
+  message = '',
+): StepsEnvelope {
+  const now = Date.now();
+  return {
+    ...envelope,
+    version: envelope.version || '1.0',
+    meta: {
+      ...envelope.meta,
+      id: envelope.meta?.id || sessionId,
+      title: envelope.meta?.title || buildRecordingTitle(envelope, hint),
+      description: envelope.meta?.description || 'Recorded from Playwright Sockets via Playground.',
+      createdAt: envelope.meta?.createdAt || now,
+      updatedAt: now,
+      intent: envelope.meta?.intent || message || hint || buildRecordingTitle(envelope, hint),
+    },
+  };
+}
+
+function getToolStringParameter(context: McpToolContext | null, key: string): string {
+  const value = context?.parameters?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
 
 export default function App() {
   const { insightId } = useInsight();
@@ -55,6 +135,8 @@ export default function App() {
     createSession,
     closeSession,
     saveRecording,
+    getRecordingEnvelope,
+    saveRoomRecording,
     listRecordingProjects,
     listRecordingFiles,
     loadRecording,
@@ -66,6 +148,10 @@ export default function App() {
   const [snackError, setSnackError] = useState<string | null>(null);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [toolContext, setToolContext] = useState<McpToolContext | null>(null);
+  const [semossContextReady, setSemossContextReady] = useState(false);
+  const [mcpStartUrlInput, setMcpStartUrlInput] = useState('');
+  const [isReturningToPlayground, setIsReturningToPlayground] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [stopRecordingDialogOpen, setStopRecordingDialogOpen] = useState(false);
   const [saveAfterStop, setSaveAfterStop] = useState(false);
@@ -93,7 +179,14 @@ export default function App() {
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [valueRequiredStepId, setValueRequiredStepId] = useState<number | null>(null);
   const autoStartedRef = useRef(false);
+  const autoRecordingStartedRef = useRef(false);
+  const returningToPlaygroundRef = useRef(false);
   const pauseRequestedRef = useRef(false);
+
+  const isPlaygroundMode = !!toolContext;
+  const mcpStartUrl = getToolStringParameter(toolContext, 'start_url') || getToolStringParameter(toolContext, 'startUrl');
+  const mcpRecordingNameHint =
+    getToolStringParameter(toolContext, 'recording_name_hint') || getToolStringParameter(toolContext, 'recordingNameHint');
 
   const flattenedSteps = useMemo((): Array<{ tabId: string; step: LoadedRecordingStep; index: number }> => {
     if (!loadedRecording?.steps) return [];
@@ -142,18 +235,54 @@ export default function App() {
   }, [saveTitle]);
 
   useEffect(() => {
+    let mounted = true;
+
+    initSemoss().then((context) => {
+      if (!mounted) return;
+      setToolContext(context);
+      setMcpStartUrlInput(getToolStringParameter(context, 'start_url') || getToolStringParameter(context, 'startUrl'));
+      setSemossContextReady(true);
+    });
+
+    const unsubscribe = subscribeToMcpToolContext((context) => {
+      if (!mounted) return;
+      setToolContext(context);
+      setMcpStartUrlInput(getToolStringParameter(context, 'start_url') || getToolStringParameter(context, 'startUrl'));
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!semossContextReady) return;
     if (autoStartedRef.current || session || isCreating) return;
+    if (isPlaygroundMode && !mcpStartUrl) return;
+
     autoStartedRef.current = true;
-    createSession('', 1365, 768, true).then((info) => {
+    createSession(isPlaygroundMode ? mcpStartUrl : '', 1365, 768, !isPlaygroundMode).then((info) => {
       if (!info) {
         autoStartedRef.current = false;
         return;
       }
-      setCurrentUrl(info.currentUrl || 'https://example.com');
+      setCurrentUrl(info.currentUrl || mcpStartUrl || 'https://example.com');
       setLatestFrame(null);
       setIsRecording(false);
     });
-  }, [createSession, isCreating, session]);
+  }, [createSession, isCreating, isPlaygroundMode, mcpStartUrl, semossContextReady, session]);
+
+  useEffect(() => {
+    if (!isPlaygroundMode || autoRecordingStartedRef.current || !session || connectionState !== 'connected') {
+      return;
+    }
+
+    autoRecordingStartedRef.current = true;
+    sendEvent({ type: 'recording-control', recording: true });
+    setIsRecording(true);
+    setSnackMessage('Recording started');
+  }, [connectionState, isPlaygroundMode, sendEvent, session]);
 
   const loadPlaywrightProjects = useCallback(() => {
     let cancelled = false;
@@ -263,6 +392,25 @@ export default function App() {
     [createSession],
   );
 
+  const handleStartMcpSession = useCallback(async () => {
+    const targetUrl = mcpStartUrlInput.trim();
+    if (!targetUrl) {
+      setSnackError('URL is required before opening a Playground recording session');
+      return;
+    }
+
+    autoStartedRef.current = true;
+    const info = await createSession(targetUrl, 1365, 768, false);
+    if (!info) {
+      autoStartedRef.current = false;
+      return;
+    }
+
+    setCurrentUrl(info.currentUrl || targetUrl);
+    setLatestFrame(null);
+    setIsRecording(false);
+  }, [createSession, mcpStartUrlInput]);
+
   const handleStop = useCallback(async () => {
     if (isRecording) {
       sendEvent({ type: 'recording-control', recording: false, discard: true });
@@ -342,6 +490,94 @@ export default function App() {
     setSaveAfterStop(false);
     setSaveDialogOpen(true);
   }, []);
+
+  const handleReturnToPlayground = useCallback(async () => {
+    if (returningToPlaygroundRef.current) return;
+    returningToPlaygroundRef.current = true;
+    setIsReturningToPlayground(true);
+
+    try {
+      if (!toolContext) {
+        throw new Error('No Playground tool context is available');
+      }
+      if (!toolContext.roomId) {
+        throw new Error('No Playground room ID is available for room file save');
+      }
+      const roomBoundInsightId = getSemossInsightId() || insightId;
+      if (!roomBoundInsightId) {
+        throw new Error('No SEMOSS insight is available for room file save');
+      }
+      if (!session) {
+        throw new Error('No active browser session is available to save');
+      }
+
+      if (isRecording) {
+        sendEvent({ type: 'recording-control', recording: false, discard: false });
+        setIsRecording(false);
+      }
+
+      const envelope = await getRecordingEnvelope();
+      if (!envelope) {
+        throw new Error('No recording envelope is available');
+      }
+
+      const enrichedEnvelope = enrichEnvelopeForRoomSave(
+        envelope,
+        session.sessionId,
+        mcpRecordingNameHint,
+        toolContext.message,
+      );
+      const fileName = buildRecordingFileName(enrichedEnvelope, mcpRecordingNameHint);
+      const saved = await saveRoomRecording(roomBoundInsightId, fileName, enrichedEnvelope);
+      if (!saved) {
+        throw new Error('Failed to save recording to the Playground room');
+      }
+
+      sendMcpResponseToPlayground(
+        {
+          saved: true,
+          recordingPath: saved.roomPath,
+          fileName: saved.fileName,
+          sessionId: session.sessionId,
+          roomId: toolContext.roomId,
+        },
+        'success',
+        toolContext.parameters,
+      );
+
+      sendEvent({ type: 'close-session' });
+      await closeSession();
+      setLatestFrame(null);
+      setCurrentUrl('');
+      setRecordedSteps([]);
+      setSnackMessage(`Saved recording: ${saved.roomPath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to return recording to Playground';
+      setSnackError(message);
+      try {
+        sendMcpResponseToPlayground(
+          { saved: false, error: message },
+          'error',
+          toolContext?.parameters ?? {},
+        );
+      } catch {
+        // Nothing else to do if the iframe cannot notify Playground.
+      }
+    } finally {
+      setIsReturningToPlayground(false);
+      returningToPlaygroundRef.current = false;
+    }
+  }, [
+    closeSession,
+    getRecordingEnvelope,
+    insightId,
+    isRecording,
+    mcpRecordingNameHint,
+    saveRoomRecording,
+    sendEvent,
+    session,
+    toolContext,
+  ]);
 
   const handleLoadRecording = useCallback(async () => {
     if (!insightId || !playbackProject || !selectedRecording) {
@@ -499,6 +735,19 @@ export default function App() {
         />
         <ConnectionStatus state={connectionState} />
         <Box sx={{ flex: 1 }} />
+        {isPlaygroundMode && session && (
+          <Button
+            size="small"
+            variant="contained"
+            color="primary"
+            disabled={isReturningToPlayground || isSaving}
+            onClick={handleReturnToPlayground}
+            startIcon={isReturningToPlayground || isSaving ? <CircularProgress size={14} color="inherit" /> : <DoneIcon fontSize="small" />}
+            sx={{ whiteSpace: 'nowrap', minWidth: 0, px: 1 }}
+          >
+            {isReturningToPlayground || isSaving ? 'Returning' : 'Return to Playground'}
+          </Button>
+        )}
         <Button
           size="small"
           variant={playbackControlsOpen || loadedRecordingOpen ? 'contained' : 'outlined'}
@@ -529,6 +778,39 @@ export default function App() {
       {sessionError && (
         <Alert severity="error" sx={{ mx: 0.5, mt: 0.5, py: 0 }}>
           {sessionError}
+        </Alert>
+      )}
+
+      {isPlaygroundMode && !session && !mcpStartUrl && (
+        <Alert
+          severity="info"
+          sx={{ mx: 0.5, mt: 0.5, py: 0.5, alignItems: 'center' }}
+          action={
+            <Button
+              size="small"
+              variant="contained"
+              disabled={isCreating || !mcpStartUrlInput.trim()}
+              onClick={handleStartMcpSession}
+            >
+              Open
+            </Button>
+          }
+        >
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 360 }}>
+            <Typography variant="body2">Enter a URL to start recording.</Typography>
+            <TextField
+              size="small"
+              value={mcpStartUrlInput}
+              onChange={(event) => setMcpStartUrlInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  handleStartMcpSession();
+                }
+              }}
+              placeholder="https://google.com"
+              sx={{ minWidth: 240 }}
+            />
+          </Stack>
         </Alert>
       )}
 
