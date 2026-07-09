@@ -40,6 +40,8 @@ export const insight = new Insight();
 
 let initialized = false;
 let toolContext = normalizeToolContext((Env as EnvWithTool).TOOL);
+let boundRoomId = "";
+let roomBinding: Promise<void> | null = null;
 const subscribers = new Set<(context: McpToolContext | null) => void>();
 
 function normalizeToolContext(rawTool: unknown): McpToolContext | null {
@@ -135,6 +137,38 @@ export function getMcpToolContext(): McpToolContext | null {
 
 export function getSemossInsightId(): string {
   return insight.insightId;
+}
+
+export async function bindSemossInsightToRoom(roomId: string): Promise<void> {
+  const normalizedRoomId = roomId.trim();
+  if (!normalizedRoomId) {
+    throw new Error("Room ID is required to bind the SEMOSS insight");
+  }
+  if (!initialized || !insight.insightId) {
+    throw new Error("SEMOSS insight is not initialized");
+  }
+  if (boundRoomId === normalizedRoomId) {
+    return;
+  }
+  if (roomBinding) {
+    await roomBinding;
+    if (boundRoomId === normalizedRoomId) {
+      return;
+    }
+  }
+
+  roomBinding = (async () => {
+    await insight.actions.run(
+      `SetRoomForInsight(roomId=${JSON.stringify(normalizedRoomId)});`,
+    );
+    boundRoomId = normalizedRoomId;
+  })();
+
+  try {
+    await roomBinding;
+  } finally {
+    roomBinding = null;
+  }
 }
 
 export function subscribeToMcpToolContext(

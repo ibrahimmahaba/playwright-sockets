@@ -52,6 +52,7 @@ import type {
   StepsEnvelope,
 } from "./types/browserEvents";
 import {
+  bindSemossInsightToRoom,
   getSemossInsightId,
   initSemoss,
   sendMcpResponseToPlayground,
@@ -629,6 +630,7 @@ export default function App() {
           "No Playground room ID is available for room file save",
         );
       }
+      await bindSemossInsightToRoom(toolContext.roomId);
       const roomBoundInsightId = effectiveInsightId;
       if (!roomBoundInsightId) {
         throw new Error("No SEMOSS insight is available for room file save");
