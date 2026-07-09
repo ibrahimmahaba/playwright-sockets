@@ -1,24 +1,38 @@
-import { Env, Insight } from '@semoss/sdk';
-import type { McpToolContext } from '../types/browserEvents';
+import { Env, Insight } from "@semoss/sdk";
+import type { McpToolContext } from "../types/browserEvents";
 
 type EnvWithTool = typeof Env & { TOOL?: unknown };
 type InsightWithMcpResponse = typeof insight & {
   actions: typeof insight.actions & {
     sendMCPResponseToPlayground?: (
       response: string,
-      status: 'success' | 'error',
+      status: "success" | "error",
       executedParameters: Record<string, unknown>,
     ) => void;
   };
 };
 
-const semossEnvScript = document.getElementById('semoss-env');
+type McpToolResponse = {
+  type: "SMSS_EXEC_TOOL";
+  tool: {
+    type: "MCP";
+    message: string;
+    id: string;
+    name: string;
+    response: string;
+    roomId: string;
+    tool_status: "success" | "error";
+    executedParameters: Record<string, unknown>;
+  };
+};
+
+const semossEnvScript = document.getElementById("semoss-env");
 
 if (semossEnvScript?.textContent) {
   try {
     Env.update(JSON.parse(semossEnvScript.textContent));
   } catch (error) {
-    console.warn('Unable to parse SEMOSS environment payload', error);
+    console.warn("Unable to parse SEMOSS environment payload", error);
   }
 }
 
@@ -29,28 +43,42 @@ let toolContext = normalizeToolContext((Env as EnvWithTool).TOOL);
 const subscribers = new Set<(context: McpToolContext | null) => void>();
 
 function normalizeToolContext(rawTool: unknown): McpToolContext | null {
-  if (!rawTool || typeof rawTool !== 'object') {
+  if (!rawTool || typeof rawTool !== "object") {
     return null;
   }
 
   const tool = rawTool as Record<string, unknown>;
   const parameters =
-    tool.parameters && typeof tool.parameters === 'object' && !Array.isArray(tool.parameters)
-      ? tool.parameters as Record<string, unknown>
+    tool.parameters &&
+    typeof tool.parameters === "object" &&
+    !Array.isArray(tool.parameters)
+      ? (tool.parameters as Record<string, unknown>)
       : {};
 
   const executedParameters =
-    tool.executedParameters && typeof tool.executedParameters === 'object' && !Array.isArray(tool.executedParameters)
-      ? tool.executedParameters as Record<string, unknown>
+    tool.executedParameters &&
+    typeof tool.executedParameters === "object" &&
+    !Array.isArray(tool.executedParameters)
+      ? (tool.executedParameters as Record<string, unknown>)
       : undefined;
 
   return {
-    type: typeof tool.type === 'string' ? tool.type : 'MCP',
-    id: typeof tool.id === 'string' ? tool.id : '',
-    name: typeof tool.name === 'string' ? tool.name : typeof tool.original_name === 'string' ? tool.original_name : '',
-    originalName: typeof tool.original_name === 'string' ? tool.original_name : typeof tool.name === 'string' ? tool.name : '',
-    message: typeof tool.message === 'string' ? tool.message : '',
-    roomId: typeof tool.roomId === 'string' ? tool.roomId : '',
+    type: typeof tool.type === "string" ? tool.type : "MCP",
+    id: typeof tool.id === "string" ? tool.id : "",
+    name:
+      typeof tool.name === "string"
+        ? tool.name
+        : typeof tool.original_name === "string"
+        ? tool.original_name
+        : "",
+    originalName:
+      typeof tool.original_name === "string"
+        ? tool.original_name
+        : typeof tool.name === "string"
+        ? tool.name
+        : "",
+    message: typeof tool.message === "string" ? tool.message : "",
+    roomId: typeof tool.roomId === "string" ? tool.roomId : "",
     parameters,
     executedParameters,
     toolResponse: tool.tool_response,
@@ -63,14 +91,14 @@ function setToolContext(nextToolContext: unknown) {
     try {
       subscriber(toolContext);
     } catch (error) {
-      console.warn('Unable to notify MCP tool context subscriber', error);
+      console.warn("Unable to notify MCP tool context subscriber", error);
     }
   });
 }
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('message', (event) => {
-    if (!event?.data || event.data.type !== 'SMSS_INIT_TOOL') {
+if (typeof window !== "undefined") {
+  window.addEventListener("message", (event) => {
+    if (!event?.data || event.data.type !== "SMSS_INIT_TOOL") {
       return;
     }
     setToolContext(event.data.tool);
@@ -84,9 +112,16 @@ export async function initSemoss(): Promise<McpToolContext | null> {
 
   try {
     const initializedContext = await insight.initialize();
-    setToolContext((initializedContext as { tool?: unknown } | undefined)?.tool || (Env as EnvWithTool).TOOL || toolContext);
+    setToolContext(
+      (initializedContext as { tool?: unknown } | undefined)?.tool ||
+        (Env as EnvWithTool).TOOL ||
+        toolContext,
+    );
   } catch (error) {
-    console.warn('SEMOSS initialization failed; continuing without MCP context', error);
+    console.warn(
+      "SEMOSS initialization failed; continuing without MCP context",
+      error,
+    );
   } finally {
     initialized = true;
   }
@@ -102,7 +137,9 @@ export function getSemossInsightId(): string {
   return insight.insightId;
 }
 
-export function subscribeToMcpToolContext(listener: (context: McpToolContext | null) => void): () => void {
+export function subscribeToMcpToolContext(
+  listener: (context: McpToolContext | null) => void,
+): () => void {
   subscribers.add(listener);
   listener(toolContext);
   return () => subscribers.delete(listener);
@@ -110,13 +147,40 @@ export function subscribeToMcpToolContext(listener: (context: McpToolContext | n
 
 export function sendMcpResponseToPlayground(
   response: unknown,
-  toolStatus: 'success' | 'error' = 'success',
+  toolStatus: "success" | "error" = "success",
   executedParameters: Record<string, unknown> = {},
 ): void {
-  const payload = typeof response === 'string' ? response : JSON.stringify(response);
-  const action = (insight as InsightWithMcpResponse).actions.sendMCPResponseToPlayground;
-  if (!action) {
-    throw new Error('SEMOSS SDK does not expose sendMCPResponseToPlayground');
+  const payload =
+    typeof response === "string" ? response : JSON.stringify(response);
+  const action = (insight as InsightWithMcpResponse).actions
+    .sendMCPResponseToPlayground;
+  if (action) {
+    action(payload, toolStatus, executedParameters);
+    return;
   }
-  action(payload, toolStatus, executedParameters);
+
+  if (!toolContext) {
+    throw new Error("No MCP tool execution context found");
+  }
+  if (typeof window === "undefined" || typeof window.parent === "undefined") {
+    throw new Error(
+      "Cannot send MCP tool response outside of embedded browser",
+    );
+  }
+
+  const message: McpToolResponse = {
+    type: "SMSS_EXEC_TOOL",
+    tool: {
+      type: "MCP",
+      message: toolContext.message,
+      id: toolContext.id,
+      name: toolContext.name,
+      response: payload,
+      roomId: toolContext.roomId,
+      tool_status: toolStatus,
+      executedParameters,
+    },
+  };
+
+  window.parent.postMessage(message, "*");
 }
