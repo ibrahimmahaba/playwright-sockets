@@ -160,7 +160,7 @@ export function getMcpToolContext(): McpToolContext | null {
 }
 
 export function getSemossInsightId(): string {
-  return insight.insightId || boundInsightId;
+  return boundInsightId || insight.insightId;
 }
 
 export async function runAppMcpTool<T = unknown>(
@@ -270,6 +270,7 @@ export async function askPlaygroundWithImage(
 
   await runPixel(
     `AskPlayground(engine=${JSON.stringify([normalizedEngineId])}, roomId=${JSON.stringify([normalizedRoomId])}, command=${JSON.stringify([`<encode>${command}</encode>`])}, image=${JSON.stringify([normalizedImage])}, paramValues=[${JSON.stringify({})}]);`,
+    getSemossInsightId(),
   );
 }
 
