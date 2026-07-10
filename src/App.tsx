@@ -53,7 +53,9 @@ import type {
   StepsEnvelope,
 } from "./types/browserEvents";
 import {
+  askPlaygroundWithImage,
   bindSemossInsightToRoom,
+  getRoomActiveModelId,
   getSemossInsightId,
   initSemoss,
   runAppMcpTool,
@@ -87,6 +89,7 @@ type PlaygroundMediaPart = {
     fileLocation?: string;
     fileName: string;
     mimeType?: string;
+    sourceUrl?: string;
   };
 };
 
@@ -200,15 +203,15 @@ function isPlayRecordingTool(context: McpToolContext | null): boolean {
 
 function buildScreenshotFileName(fileName: string, fallback = "screenshot") {
   const base = sanitizeFilePart(fileName.replace(/\.json$/i, "")) || fallback;
-  return `${base}.jpg`;
+  return `${base}.png`;
 }
 
 function buildScreenshotMediaPart(
   screenshot: RoomAssetSaveResponse | null,
-  base64Jpeg: string | null,
+  base64Png: string | null,
   fallbackFileName: string,
 ): PlaygroundMediaPart | null {
-  if (!screenshot && !base64Jpeg) {
+  if (!screenshot && !base64Png) {
     return null;
   }
 
@@ -216,11 +219,57 @@ function buildScreenshotMediaPart(
     type: "MEDIA",
     mediaInfo: {
       fileName: screenshot?.fileName ?? fallbackFileName,
-      mimeType: screenshot?.mimeType ?? "image/jpeg",
-      ...(base64Jpeg ? { base64Data: base64Jpeg } : {}),
+      mimeType: screenshot?.mimeType ?? "image/png",
+      ...(base64Png ? { base64Data: base64Png } : {}),
       ...(screenshot?.roomPath ? { fileLocation: screenshot.roomPath } : {}),
+      ...(screenshot?.roomPath ? { sourceUrl: screenshot.roomPath } : {}),
     },
   };
+}
+
+function convertJpegBase64ToPngBase64(base64Jpeg: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("Unable to create PNG screenshot canvas"));
+        return;
+      }
+      context.drawImage(image, 0, 0);
+      resolve(canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""));
+    };
+    image.onerror = () => reject(new Error("Unable to decode browser screenshot"));
+    image.src = `data:image/jpeg;base64,${base64Jpeg}`;
+  });
+}
+
+async function buildContentAddressedMediaFileName(base64Png: string): Promise<string> {
+  const binary = window.atob(base64Png.replace(/\s+/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return `media_${hash.slice(0, 16)}.png`;
+}
+
+function normalizeBrowserUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
 }
 
 function getStepCoords(step: LoadedRecordingStep): { x: number; y: number } | null {
@@ -234,6 +283,31 @@ function getStepCoords(step: LoadedRecordingStep): { x: number; y: number } | nu
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function scheduleScreenshotAskPlaygroundFollowUp(
+  roomId: string,
+  screenshotDataUri: string | null | undefined,
+  command: string,
+): void {
+  if (!roomId || !screenshotDataUri) {
+    return;
+  }
+
+  window.setTimeout(() => {
+    void (async () => {
+      try {
+        const modelId = await getRoomActiveModelId(roomId);
+        if (!modelId) {
+          console.warn("Unable to resolve Playground room model for screenshot follow-up");
+          return;
+        }
+        await askPlaygroundWithImage(roomId, modelId, screenshotDataUri, command);
+      } catch (error) {
+        console.warn("Unable to send screenshot follow-up to Playground", error);
+      }
+    })();
+  }, 1500);
 }
 
 export default function App() {
@@ -329,8 +403,10 @@ export default function App() {
   const isPlaygroundMode = !!toolContext;
   const isMcpPlaybackMode = isPlayRecordingTool(toolContext);
   const mcpStartUrl =
-    getToolStringParameter(toolContext, "start_url") ||
-    getToolStringParameter(toolContext, "startUrl");
+    normalizeBrowserUrl(
+      getToolStringParameter(toolContext, "start_url") ||
+        getToolStringParameter(toolContext, "startUrl"),
+    );
   const mcpRecordingNameHint =
     getToolStringParameter(toolContext, "recording_name_hint") ||
     getToolStringParameter(toolContext, "recordingNameHint");
@@ -448,8 +524,10 @@ export default function App() {
       if (!mounted) return;
       setToolContext(context);
       setMcpStartUrlInput(
-        getToolStringParameter(context, "start_url") ||
-          getToolStringParameter(context, "startUrl"),
+        normalizeBrowserUrl(
+          getToolStringParameter(context, "start_url") ||
+            getToolStringParameter(context, "startUrl"),
+        ),
       );
       setSemossContextReady(true);
     });
@@ -458,8 +536,10 @@ export default function App() {
       if (!mounted) return;
       setToolContext(context);
       setMcpStartUrlInput(
-        getToolStringParameter(context, "start_url") ||
-          getToolStringParameter(context, "startUrl"),
+        normalizeBrowserUrl(
+          getToolStringParameter(context, "start_url") ||
+            getToolStringParameter(context, "startUrl"),
+        ),
       );
     });
 
@@ -713,7 +793,9 @@ export default function App() {
         }
         if (cancelled) return;
         setPlaybackStartUrl(
-          mcpStartUrl || selected.startUrl || "https://example.com",
+          normalizeBrowserUrl(
+            mcpStartUrl || selected.startUrl || "https://example.com",
+          ),
         );
         setPlaybackRecordingSource("room");
         setPlaybackProject(selectedProject);
@@ -726,7 +808,9 @@ export default function App() {
       }
 
       setPlaybackStartUrl(
-        mcpStartUrl || selected.startUrl || "https://example.com",
+        normalizeBrowserUrl(
+          mcpStartUrl || selected.startUrl || "https://example.com",
+        ),
       );
       setPlaybackRecordingSource("project");
       setPlaybackProject(selectedProject);
@@ -804,9 +888,10 @@ export default function App() {
   // ─── Toolbar handlers ───────────────────────────────────────────────────
   const handleStart = useCallback(
     async (url: string) => {
-      const info = await createSession(url);
+      const normalizedUrl = normalizeBrowserUrl(url);
+      const info = await createSession(normalizedUrl);
       if (info) {
-        setCurrentUrl(info.currentUrl || url);
+        setCurrentUrl(info.currentUrl || normalizedUrl);
         setLatestFrame(null);
         setIsRecording(false);
       }
@@ -815,7 +900,7 @@ export default function App() {
   );
 
   const handleStartMcpSession = useCallback(async () => {
-    const targetUrl = mcpStartUrlInput.trim();
+    const targetUrl = normalizeBrowserUrl(mcpStartUrlInput);
     if (!targetUrl) {
       setSnackError(
         "URL is required before opening a Playground recording session",
@@ -842,7 +927,8 @@ export default function App() {
 
       switch (type) {
         case "NAVIGATE": {
-          const url = typeof step.url === "string" ? step.url.trim() : "";
+          const url =
+            typeof step.url === "string" ? normalizeBrowserUrl(step.url) : "";
           if (!url) {
             setSnackError(`Step ${step.id ?? ""} is missing a URL`);
             return false;
@@ -932,7 +1018,7 @@ export default function App() {
 
   const handleNavigate = useCallback(
     (url: string) => {
-      sendEvent({ type: "navigate", url });
+      sendEvent({ type: "navigate", url: normalizeBrowserUrl(url) });
     },
     [sendEvent],
   );
@@ -1076,17 +1162,23 @@ export default function App() {
       }
 
       const screenshotFrame = latestFrameRef.current;
-      const screenshot = screenshotFrame
+      const screenshotPng = screenshotFrame
+        ? await convertJpegBase64ToPngBase64(screenshotFrame)
+        : null;
+      const screenshotFileName = screenshotPng
+        ? await buildContentAddressedMediaFileName(screenshotPng)
+        : buildScreenshotFileName(saved.fileName);
+      const screenshot = screenshotPng
         ? await saveRoomScreenshot(
             roomBoundInsightId,
-            buildScreenshotFileName(saved.fileName),
-            screenshotFrame,
+            screenshotFileName,
+            screenshotPng,
           )
         : null;
       const screenshotMediaPart = buildScreenshotMediaPart(
         screenshot,
-        screenshotFrame,
-        buildScreenshotFileName(saved.fileName),
+        screenshotPng,
+        screenshotFileName,
       );
 
       sendMcpResponseToPlayground(
@@ -1095,9 +1187,10 @@ export default function App() {
           recordingPath: saved.roomPath,
           fileName: saved.fileName,
           screenshotPath: screenshot?.roomPath ?? null,
-          screenshotMimeType: screenshot?.mimeType ?? "image/jpeg",
-          screenshotDataUrl: screenshotFrame
-            ? `data:image/jpeg;base64,${screenshotFrame}`
+          screenshotSourceUrl: screenshot?.roomPath ?? null,
+          screenshotMimeType: screenshot?.mimeType ?? "image/png",
+          screenshotDataUrl: screenshotPng
+            ? `data:image/png;base64,${screenshotPng}`
             : null,
           media: screenshotMediaPart ? [screenshotMediaPart] : [],
           messageParts: screenshotMediaPart ? [screenshotMediaPart] : [],
@@ -1108,7 +1201,11 @@ export default function App() {
         toolContext.parameters,
         screenshotMediaPart ? { mediaParts: [screenshotMediaPart] } : {},
       );
-
+      scheduleScreenshotAskPlaygroundFollowUp(
+        toolContext.roomId,
+        screenshotPng ? `data:image/png;base64,${screenshotPng}` : null,
+        `A Playwright recording was saved to ${saved.roomPath}. The attached image is the final browser screenshot captured for that recording.`,
+      );
       sendEvent({ type: "close-session" });
       await closeSession();
       setLatestFrame(null);
@@ -1374,20 +1471,26 @@ export default function App() {
         }
 
         const screenshotFrame = latestFrameRef.current;
+        const screenshotPng = screenshotFrame
+          ? await convertJpegBase64ToPngBase64(screenshotFrame)
+          : null;
         let screenshot: RoomAssetSaveResponse | null = null;
+        const screenshotFileName = screenshotPng
+          ? await buildContentAddressedMediaFileName(screenshotPng)
+          : buildScreenshotFileName(selectedRecording, "playwright-playback");
 
-        if (toolContext.roomId && effectiveInsightId && screenshotFrame) {
+        if (toolContext.roomId && effectiveInsightId && screenshotPng) {
           await bindSemossInsightToRoom(toolContext.roomId);
           screenshot = await saveRoomScreenshot(
             effectiveInsightId,
-            buildScreenshotFileName(selectedRecording, "playwright-playback"),
-            screenshotFrame,
+            screenshotFileName,
+            screenshotPng,
           );
         }
         const screenshotMediaPart = buildScreenshotMediaPart(
           screenshot,
-          screenshotFrame,
-          buildScreenshotFileName(selectedRecording, "playwright-playback"),
+          screenshotPng,
+          screenshotFileName,
         );
 
         sendMcpResponseToPlayground(
@@ -1399,9 +1502,10 @@ export default function App() {
             stepsRun: result.stepsRun,
             pausedAtStepId: result.pausedAtStepId ?? null,
             screenshotPath: screenshot?.roomPath ?? null,
-            screenshotMimeType: screenshot?.mimeType ?? "image/jpeg",
-            screenshotDataUrl: screenshotFrame
-              ? `data:image/jpeg;base64,${screenshotFrame}`
+            screenshotSourceUrl: screenshot?.roomPath ?? null,
+            screenshotMimeType: screenshot?.mimeType ?? "image/png",
+            screenshotDataUrl: screenshotPng
+              ? `data:image/png;base64,${screenshotPng}`
               : null,
             media: screenshotMediaPart ? [screenshotMediaPart] : [],
             messageParts: screenshotMediaPart ? [screenshotMediaPart] : [],
@@ -1411,6 +1515,11 @@ export default function App() {
           result.completed ? "success" : "paused",
           toolContext.parameters,
           screenshotMediaPart ? { mediaParts: [screenshotMediaPart] } : {},
+        );
+        scheduleScreenshotAskPlaygroundFollowUp(
+          toolContext.roomId,
+          screenshotPng ? `data:image/png;base64,${screenshotPng}` : null,
+          `A Playwright recording playback ${result.completed ? "completed" : "paused"}. The attached image is the final browser screenshot captured after playback.`,
         );
       } catch (error) {
         const message =

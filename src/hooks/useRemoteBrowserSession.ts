@@ -73,7 +73,7 @@ interface UseRemoteBrowserSessionReturn {
   saveRoomScreenshot: (
     insightId: string,
     fileName: string,
-    base64Jpeg: string,
+    base64Png: string,
   ) => Promise<RoomAssetSaveResponse | null>;
   listRecordingProjects: (insightId: string) => Promise<RecordingProjectOption[]>;
   listRecordingFiles: (insightId: string, projectId: string) => Promise<string[]>;
@@ -256,22 +256,22 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
   );
 
   const saveRoomScreenshot = useCallback(
-    async (insightId: string, fileName: string, base64Jpeg: string): Promise<RoomAssetSaveResponse | null> => {
+    async (insightId: string, fileName: string, base64Png: string): Promise<RoomAssetSaveResponse | null> => {
       if (!insightId) {
         setError('Insight ID is required to save room screenshot');
         return null;
       }
-      if (!base64Jpeg) {
+      if (!base64Png) {
         setError('Screenshot content is required');
         return null;
       }
 
-      const normalizedName = fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') ? fileName : `${fileName}.jpg`;
-      const relativePath = `playwright/screenshots/${normalizedName}`;
+      const normalizedName = fileName.endsWith('.png') ? fileName : `${fileName}.png`;
+      const relativePath = normalizedName;
 
       setError(null);
       try {
-        const pixel = `SaveInsightAssetsBase64(filePath=[${JSON.stringify(relativePath)}], content=[${JSON.stringify(base64Jpeg)}]);`;
+        const pixel = `SaveInsightAssetsBase64(filePath=[${JSON.stringify(relativePath)}], content=[${JSON.stringify(base64Png)}]);`;
         const res = await runPixel(pixel, insightId);
         const errors = res.pixelReturn
           ?.filter((item) => String(item.operationType || '').includes('ERROR'))
@@ -284,7 +284,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
           saved: true,
           fileName: normalizedName,
           roomPath: `/${relativePath}`,
-          mimeType: 'image/jpeg',
+          mimeType: 'image/png',
         };
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Failed to save screenshot to room';
