@@ -49,6 +49,7 @@ import type {
   LoadedRecordingStep,
   McpToolContext,
   RemoteBrowserRecordedStep,
+  RoomAssetSaveResponse,
   StepsEnvelope,
 } from "./types/browserEvents";
 import {
@@ -78,6 +79,16 @@ type ResolvePlaywrightRecordingResponse = {
 };
 
 type PlaybackRecordingSource = "project" | "room";
+
+type PlaygroundMediaPart = {
+  type: "MEDIA";
+  mediaInfo: {
+    base64Data?: string;
+    fileLocation?: string;
+    fileName: string;
+    mimeType?: string;
+  };
+};
 
 function flattenEnvelopeSteps(
   envelope: StepsEnvelope,
@@ -190,6 +201,26 @@ function isPlayRecordingTool(context: McpToolContext | null): boolean {
 function buildScreenshotFileName(fileName: string, fallback = "screenshot") {
   const base = sanitizeFilePart(fileName.replace(/\.json$/i, "")) || fallback;
   return `${base}.jpg`;
+}
+
+function buildScreenshotMediaPart(
+  screenshot: RoomAssetSaveResponse | null,
+  base64Jpeg: string | null,
+  fallbackFileName: string,
+): PlaygroundMediaPart | null {
+  if (!screenshot && !base64Jpeg) {
+    return null;
+  }
+
+  return {
+    type: "MEDIA",
+    mediaInfo: {
+      fileName: screenshot?.fileName ?? fallbackFileName,
+      mimeType: screenshot?.mimeType ?? "image/jpeg",
+      ...(base64Jpeg ? { base64Data: base64Jpeg } : {}),
+      ...(screenshot?.roomPath ? { fileLocation: screenshot.roomPath } : {}),
+    },
+  };
 }
 
 function getStepCoords(step: LoadedRecordingStep): { x: number; y: number } | null {
@@ -1052,6 +1083,11 @@ export default function App() {
             screenshotFrame,
           )
         : null;
+      const screenshotMediaPart = buildScreenshotMediaPart(
+        screenshot,
+        screenshotFrame,
+        buildScreenshotFileName(saved.fileName),
+      );
 
       sendMcpResponseToPlayground(
         {
@@ -1063,11 +1099,14 @@ export default function App() {
           screenshotDataUrl: screenshotFrame
             ? `data:image/jpeg;base64,${screenshotFrame}`
             : null,
+          media: screenshotMediaPart ? [screenshotMediaPart] : [],
+          messageParts: screenshotMediaPart ? [screenshotMediaPart] : [],
           sessionId: session.sessionId,
           roomId: toolContext.roomId,
         },
         "success",
         toolContext.parameters,
+        screenshotMediaPart ? { mediaParts: [screenshotMediaPart] } : {},
       );
 
       sendEvent({ type: "close-session" });
@@ -1335,9 +1374,7 @@ export default function App() {
         }
 
         const screenshotFrame = latestFrameRef.current;
-        let screenshot:
-          | { roomPath: string; mimeType: string; fileName: string }
-          | null = null;
+        let screenshot: RoomAssetSaveResponse | null = null;
 
         if (toolContext.roomId && effectiveInsightId && screenshotFrame) {
           await bindSemossInsightToRoom(toolContext.roomId);
@@ -1347,6 +1384,11 @@ export default function App() {
             screenshotFrame,
           );
         }
+        const screenshotMediaPart = buildScreenshotMediaPart(
+          screenshot,
+          screenshotFrame,
+          buildScreenshotFileName(selectedRecording, "playwright-playback"),
+        );
 
         sendMcpResponseToPlayground(
           {
@@ -1361,11 +1403,14 @@ export default function App() {
             screenshotDataUrl: screenshotFrame
               ? `data:image/jpeg;base64,${screenshotFrame}`
               : null,
+            media: screenshotMediaPart ? [screenshotMediaPart] : [],
+            messageParts: screenshotMediaPart ? [screenshotMediaPart] : [],
             sessionId: session.sessionId,
             roomId: toolContext.roomId,
           },
           result.completed ? "success" : "paused",
           toolContext.parameters,
+          screenshotMediaPart ? { mediaParts: [screenshotMediaPart] } : {},
         );
       } catch (error) {
         const message =

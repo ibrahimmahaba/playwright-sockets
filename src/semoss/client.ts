@@ -3,6 +3,19 @@ import type { McpToolContext } from "../types/browserEvents";
 
 type EnvWithTool = typeof Env & { TOOL?: unknown };
 type McpToolStatus = "success" | "error" | "cancelled" | "paused";
+type McpMediaPart = {
+  type: "MEDIA";
+  mediaInfo: {
+    base64Data?: string;
+    fileLocation?: string;
+    fileName: string;
+    mimeType?: string;
+    sourceUrl?: string;
+  };
+};
+type McpResponseOptions = {
+  mediaParts?: McpMediaPart[];
+};
 type InsightWithMcpResponse = typeof insight & {
   actions: typeof insight.actions & {
     sendMCPResponseToPlayground?: (
@@ -24,6 +37,7 @@ type McpToolResponse = {
     roomId: string;
     tool_status: McpToolStatus;
     executedParameters: Record<string, unknown>;
+    mediaParts?: McpMediaPart[];
   };
 };
 
@@ -206,6 +220,7 @@ export function sendMcpResponseToPlayground(
   response: unknown,
   toolStatus: McpToolStatus = "success",
   executedParameters: Record<string, unknown> = {},
+  options: McpResponseOptions = {},
 ): void {
   const payload =
     typeof response === "string" ? response : JSON.stringify(response);
@@ -236,6 +251,9 @@ export function sendMcpResponseToPlayground(
       roomId: toolContext.roomId,
       tool_status: toolStatus,
       executedParameters,
+      ...(options.mediaParts?.length
+        ? { mediaParts: options.mediaParts }
+        : {}),
     },
   };
 
