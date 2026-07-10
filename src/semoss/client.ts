@@ -2,11 +2,12 @@ import { Env, Insight } from "@semoss/sdk";
 import type { McpToolContext } from "../types/browserEvents";
 
 type EnvWithTool = typeof Env & { TOOL?: unknown };
+type McpToolStatus = "success" | "error" | "cancelled" | "paused";
 type InsightWithMcpResponse = typeof insight & {
   actions: typeof insight.actions & {
     sendMCPResponseToPlayground?: (
       response: string,
-      status: "success" | "error",
+      status: McpToolStatus,
       executedParameters: Record<string, unknown>,
     ) => void;
   };
@@ -21,7 +22,7 @@ type McpToolResponse = {
     name: string;
     response: string;
     roomId: string;
-    tool_status: "success" | "error";
+    tool_status: McpToolStatus;
     executedParameters: Record<string, unknown>;
   };
 };
@@ -139,6 +140,28 @@ export function getSemossInsightId(): string {
   return insight.insightId;
 }
 
+export async function runAppMcpTool<T = unknown>(
+  name: string,
+  parameters: Record<string, unknown>,
+): Promise<T> {
+  const appId = Env.APP;
+  if (!appId) {
+    throw new Error("SEMOSS app id is required to run an app MCP tool");
+  }
+
+  const { pixelReturn } = await insight.actions.run<[unknown]>(
+    `RunMCPTool(project=[${JSON.stringify(appId)}], function=[${JSON.stringify(
+      name,
+    )}], paramValues=[${JSON.stringify(parameters)}]);`,
+  );
+
+  const output = pixelReturn?.[0]?.output;
+  if (typeof output === "string") {
+    return JSON.parse(output) as T;
+  }
+  return output as T;
+}
+
 export async function bindSemossInsightToRoom(roomId: string): Promise<void> {
   const normalizedRoomId = roomId.trim();
   if (!normalizedRoomId) {
@@ -181,7 +204,7 @@ export function subscribeToMcpToolContext(
 
 export function sendMcpResponseToPlayground(
   response: unknown,
-  toolStatus: "success" | "error" = "success",
+  toolStatus: McpToolStatus = "success",
   executedParameters: Record<string, unknown> = {},
 ): void {
   const payload =

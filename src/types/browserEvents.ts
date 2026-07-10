@@ -100,6 +100,13 @@ export interface RoomRecordingSaveResponse {
   roomPath: string;
 }
 
+export interface RoomAssetSaveResponse {
+  saved: boolean;
+  fileName: string;
+  roomPath: string;
+  mimeType: string;
+}
+
 export interface McpToolContext {
   type: string;
   id: string;

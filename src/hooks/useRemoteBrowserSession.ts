@@ -4,6 +4,7 @@ import type {
   LoadedRecording,
   RemoteBrowserSessionInfo,
   RemoteBrowserRecordedStep,
+  RoomAssetSaveResponse,
   RecordingProjectOption,
   ReplayStepResult,
   RoomRecordingSaveResponse,
@@ -69,8 +70,17 @@ interface UseRemoteBrowserSessionReturn {
     fileName: string,
     envelope: StepsEnvelope,
   ) => Promise<RoomRecordingSaveResponse | null>;
+  saveRoomScreenshot: (
+    insightId: string,
+    fileName: string,
+    base64Jpeg: string,
+  ) => Promise<RoomAssetSaveResponse | null>;
   listRecordingProjects: (insightId: string) => Promise<RecordingProjectOption[]>;
   listRecordingFiles: (insightId: string, projectId: string) => Promise<string[]>;
+  getRoomRecordingEnvelope: (
+    insightId: string,
+    roomPath: string,
+  ) => Promise<LoadedRecording | null>;
   loadRecording: (insightId: string, projectId: string, fileName: string) => Promise<LoadedRecording | null>;
   replaySingleStep: (
     insightId: string,
@@ -245,6 +255,46 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     [],
   );
 
+  const saveRoomScreenshot = useCallback(
+    async (insightId: string, fileName: string, base64Jpeg: string): Promise<RoomAssetSaveResponse | null> => {
+      if (!insightId) {
+        setError('Insight ID is required to save room screenshot');
+        return null;
+      }
+      if (!base64Jpeg) {
+        setError('Screenshot content is required');
+        return null;
+      }
+
+      const normalizedName = fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') ? fileName : `${fileName}.jpg`;
+      const relativePath = `playwright/screenshots/${normalizedName}`;
+
+      setError(null);
+      try {
+        const pixel = `SaveInsightAssetsBase64(filePath=[${JSON.stringify(relativePath)}], content=[${JSON.stringify(base64Jpeg)}]);`;
+        const res = await runPixel(pixel, insightId);
+        const errors = res.pixelReturn
+          ?.filter((item) => String(item.operationType || '').includes('ERROR'))
+          .map((item) => typeof item.output === 'string' ? item.output : JSON.stringify(item.output));
+        if (errors?.length) {
+          throw new Error(errors.join('\n'));
+        }
+
+        return {
+          saved: true,
+          fileName: normalizedName,
+          roomPath: `/${relativePath}`,
+          mimeType: 'image/jpeg',
+        };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to save screenshot to room';
+        setError(msg);
+        return null;
+      }
+    },
+    [],
+  );
+
   const listRecordingProjects = useCallback(async (insightId: string): Promise<RecordingProjectOption[]> => {
     if (!insightId) {
       setError('Insight ID is required to list recording projects');
@@ -301,6 +351,32 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
       return [];
     }
   }, []);
+
+  const getRoomRecordingEnvelope = useCallback(
+    async (insightId: string, roomPath: string): Promise<LoadedRecording | null> => {
+      if (!insightId || !roomPath) {
+        return null;
+      }
+
+      setError(null);
+      try {
+        const pixel = `GetInsightAssets(filePath=[${JSON.stringify(roomPath)}]);`;
+        const res = await runPixel(pixel, insightId);
+        const output = res.pixelReturn?.[0]?.output;
+        if (typeof output !== 'string') {
+          return null;
+        }
+        const parsed = JSON.parse(output);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'steps' in parsed) {
+          return parsed as LoadedRecording;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
 
   const loadRecording = useCallback(
     async (insightId: string, projectId: string, fileName: string): Promise<LoadedRecording | null> => {
@@ -412,8 +488,10 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     saveRecording,
     getRecordingEnvelope,
     saveRoomRecording,
+    saveRoomScreenshot,
     listRecordingProjects,
     listRecordingFiles,
+    getRoomRecordingEnvelope,
     loadRecording,
     replaySingleStep,
     getRecordedSteps,

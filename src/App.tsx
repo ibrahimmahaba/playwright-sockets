@@ -55,9 +55,29 @@ import {
   bindSemossInsightToRoom,
   getSemossInsightId,
   initSemoss,
+  runAppMcpTool,
   sendMcpResponseToPlayground,
   subscribeToMcpToolContext,
 } from "./semoss/client";
+
+type ResolvedPlaywrightRecording = {
+  source: "project" | "room";
+  projectId?: string;
+  fileName: string;
+  roomPath?: string;
+  score: number;
+  reason: string;
+  startUrl?: string;
+};
+
+type ResolvePlaywrightRecordingResponse = {
+  selected: ResolvedPlaywrightRecording | null;
+  candidates: ResolvedPlaywrightRecording[];
+  searchedProjectRecordings: number;
+  searchedRoomRecordings: number;
+};
+
+type PlaybackRecordingSource = "project" | "room";
 
 function flattenEnvelopeSteps(
   envelope: StepsEnvelope,
@@ -155,6 +175,36 @@ function getToolStringParameter(
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getToolFunctionName(context: McpToolContext | null): string {
+  return (context?.originalName || context?.name || "").trim();
+}
+
+function isPlayRecordingTool(context: McpToolContext | null): boolean {
+  const name = getToolFunctionName(context);
+  return (
+    name === "play_playwright_sockets_recording" ||
+    name.endsWith("_play_playwright_sockets_recording")
+  );
+}
+
+function buildScreenshotFileName(fileName: string, fallback = "screenshot") {
+  const base = sanitizeFilePart(fileName.replace(/\.json$/i, "")) || fallback;
+  return `${base}.jpg`;
+}
+
+function getStepCoords(step: LoadedRecordingStep): { x: number; y: number } | null {
+  const coords = step.coords;
+  if (!coords || typeof coords !== "object") return null;
+  const raw = coords as Record<string, unknown>;
+  const x = Number(raw.x);
+  const y = Number(raw.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export default function App() {
   const { insightId } = useInsight();
   const {
@@ -168,8 +218,10 @@ export default function App() {
     saveRecording,
     getRecordingEnvelope,
     saveRoomRecording,
+    saveRoomScreenshot,
     listRecordingProjects,
     listRecordingFiles,
+    getRoomRecordingEnvelope,
     loadRecording,
     replaySingleStep,
     getRecordedSteps,
@@ -204,6 +256,9 @@ export default function App() {
   const [selectedRecording, setSelectedRecording] = useState<string | null>(
     null,
   );
+  const [playbackStartUrl, setPlaybackStartUrl] = useState("");
+  const [playbackRecordingSource, setPlaybackRecordingSource] =
+    useState<PlaybackRecordingSource>("project");
   const [loadedRecording, setLoadedRecording] =
     useState<LoadedRecording | null>(null);
   const [runningStepId, setRunningStepId] = useState<number | null>(null);
@@ -231,16 +286,31 @@ export default function App() {
   );
   const autoStartedRef = useRef(false);
   const autoRecordingStartedRef = useRef(false);
+  const autoPlaybackProjectSelectedRef = useRef(false);
+  const autoPlaybackRecordingSelectedRef = useRef(false);
+  const autoPlaybackLoadStartedRef = useRef(false);
+  const autoPlaybackRunStartedRef = useRef(false);
+  const autoPlaybackErrorSentRef = useRef(false);
   const returningToPlaygroundRef = useRef(false);
   const pauseRequestedRef = useRef(false);
+  const latestFrameRef = useRef<string | null>(null);
 
   const isPlaygroundMode = !!toolContext;
+  const isMcpPlaybackMode = isPlayRecordingTool(toolContext);
   const mcpStartUrl =
     getToolStringParameter(toolContext, "start_url") ||
     getToolStringParameter(toolContext, "startUrl");
   const mcpRecordingNameHint =
     getToolStringParameter(toolContext, "recording_name_hint") ||
     getToolStringParameter(toolContext, "recordingNameHint");
+  const mcpRecordingFile =
+    getToolStringParameter(toolContext, "recording_file") ||
+    getToolStringParameter(toolContext, "recordingFile") ||
+    getToolStringParameter(toolContext, "file_name") ||
+    getToolStringParameter(toolContext, "fileName");
+  const mcpPlaybackProjectId =
+    getToolStringParameter(toolContext, "project_id") ||
+    getToolStringParameter(toolContext, "projectId");
   const effectiveInsightId = getSemossInsightId() || insightId;
 
   const flattenedSteps = useMemo((): Array<{
@@ -278,6 +348,38 @@ export default function App() {
     [flattenedSteps],
   );
 
+  const initializeLoadedRecording = useCallback(
+    (recording: LoadedRecording, label: string) => {
+      setLoadedRecording(recording);
+      setExecutedStepIds(new Set());
+      setRunningStepId(null);
+      setIsPlaybackPaused(false);
+      setValueRequiredStepId(null);
+      pauseRequestedRef.current = false;
+      const initialValues: Record<number, string> = {};
+      Object.values(recording.steps).forEach((tabSteps) => {
+        const maybeNested = tabSteps as Array<
+          LoadedRecordingStep | LoadedRecordingStep[]
+        >;
+        maybeNested
+          .flatMap((item) => (Array.isArray(item) ? item : [item]))
+          .forEach((step) => {
+            if (
+              step.type === "TYPE" &&
+              typeof step.id === "number" &&
+              typeof step.text === "string"
+            ) {
+              initialValues[step.id] = step.text;
+            }
+          });
+      });
+      setEditedTypeValues(initialValues);
+      setLoadedRecordingOpen(true);
+      setSnackMessage(`Loaded ${label}`);
+    },
+    [],
+  );
+
   // Frame callback - stable reference so it doesn't re-trigger the socket effect
   const handleFrame = useCallback((data: string, _w: number, _h: number) => {
     setLatestFrame(data);
@@ -303,6 +405,10 @@ export default function App() {
     const today = new Date().toISOString().split("T")[0];
     return `${title}-${today}`;
   }, [saveTitle]);
+
+  useEffect(() => {
+    latestFrameRef.current = latestFrame;
+  }, [latestFrame]);
 
   useEffect(() => {
     let mounted = true;
@@ -335,11 +441,14 @@ export default function App() {
   useEffect(() => {
     if (!semossContextReady) return;
     if (autoStartedRef.current || session || isCreating) return;
-    if (isPlaygroundMode && !mcpStartUrl) return;
+    const startupUrl = isMcpPlaybackMode
+      ? mcpStartUrl || playbackStartUrl
+      : mcpStartUrl;
+    if (isPlaygroundMode && !startupUrl) return;
 
     autoStartedRef.current = true;
     createSession(
-      isPlaygroundMode ? mcpStartUrl : "",
+      isPlaygroundMode ? startupUrl : "",
       1365,
       768,
       !isPlaygroundMode,
@@ -348,15 +457,17 @@ export default function App() {
         autoStartedRef.current = false;
         return;
       }
-      setCurrentUrl(info.currentUrl || mcpStartUrl || "https://example.com");
+      setCurrentUrl(info.currentUrl || startupUrl || "https://example.com");
       setLatestFrame(null);
       setIsRecording(false);
     });
   }, [
     createSession,
     isCreating,
+    isMcpPlaybackMode,
     isPlaygroundMode,
     mcpStartUrl,
+    playbackStartUrl,
     semossContextReady,
     session,
   ]);
@@ -364,6 +475,7 @@ export default function App() {
   useEffect(() => {
     if (
       !isPlaygroundMode ||
+      isMcpPlaybackMode ||
       autoRecordingStartedRef.current ||
       !session ||
       connectionState !== "connected"
@@ -375,7 +487,7 @@ export default function App() {
     sendEvent({ type: "recording-control", recording: true });
     setIsRecording(true);
     setSnackMessage("Recording started");
-  }, [connectionState, isPlaygroundMode, sendEvent, session]);
+  }, [connectionState, isMcpPlaybackMode, isPlaygroundMode, sendEvent, session]);
 
   const loadPlaywrightProjects = useCallback(() => {
     let cancelled = false;
@@ -416,6 +528,29 @@ export default function App() {
   }, [loadPlaywrightProjects]);
 
   useEffect(() => {
+    if (
+      !isMcpPlaybackMode ||
+      autoPlaybackProjectSelectedRef.current ||
+      recordingProjects.length === 0
+    ) {
+      return;
+    }
+
+    const selectedProject =
+      (mcpPlaybackProjectId &&
+        recordingProjects.find(
+          (project) => project.value === mcpPlaybackProjectId,
+        )) ||
+      recordingProjects[0] ||
+      null;
+
+    if (selectedProject) {
+      autoPlaybackProjectSelectedRef.current = true;
+      setPlaybackProject(selectedProject);
+    }
+  }, [isMcpPlaybackMode, mcpPlaybackProjectId, recordingProjects]);
+
+  useEffect(() => {
     if (!saveDialogOpen || recordingProjects.length > 0) return;
     const cleanup = loadPlaywrightProjects();
     return () => {
@@ -425,6 +560,9 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    if (isMcpPlaybackMode && playbackRecordingSource === "room") {
+      return;
+    }
     setLoadedRecording(null);
     setSelectedRecording(null);
     if (!effectiveInsightId || !playbackProject?.value) {
@@ -437,7 +575,9 @@ export default function App() {
       .then((files) => {
         if (cancelled) return;
         setRecordingFiles(files);
-        setSelectedRecording(files[0] ?? null);
+        if (!isMcpPlaybackMode) {
+          setSelectedRecording(files[0] ?? null);
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoadingRecordingFiles(false);
@@ -446,7 +586,157 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [effectiveInsightId, listRecordingFiles, playbackProject]);
+  }, [
+    effectiveInsightId,
+    isMcpPlaybackMode,
+    listRecordingFiles,
+    playbackProject,
+    playbackRecordingSource,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isMcpPlaybackMode ||
+      autoPlaybackRecordingSelectedRef.current ||
+      !effectiveInsightId ||
+      recordingProjects.length === 0
+    ) {
+      return;
+    }
+
+    autoPlaybackRecordingSelectedRef.current = true;
+
+    let cancelled = false;
+
+    (async () => {
+      if (toolContext?.roomId) {
+        await bindSemossInsightToRoom(toolContext.roomId);
+      }
+
+      const resolved =
+        await runAppMcpTool<ResolvePlaywrightRecordingResponse>(
+          "resolve_playwright_recording",
+          {
+            recording_name_hint: mcpRecordingNameHint,
+            recording_file: mcpRecordingFile,
+            project_id: mcpPlaybackProjectId,
+          },
+        );
+
+      if (cancelled) return;
+
+      const selected = resolved.selected;
+
+      if (!selected) {
+        const message = `No recording matched "${mcpRecordingFile || mcpRecordingNameHint}"`;
+        setSnackError(message);
+        if (!autoPlaybackErrorSentRef.current && toolContext) {
+          autoPlaybackErrorSentRef.current = true;
+          try {
+            sendMcpResponseToPlayground(
+              {
+                played: false,
+                error: message,
+                recordingNameHint: mcpRecordingNameHint,
+                recordingFile: mcpRecordingFile || null,
+                searchedProjectRecordingCount:
+                  resolved.searchedProjectRecordings,
+                searchedRoomRecordingCount: resolved.searchedRoomRecordings,
+              },
+              "error",
+              toolContext.parameters,
+            );
+          } catch {
+            // Nothing else to do if the iframe cannot notify Playground.
+          }
+        }
+        return;
+      }
+
+      const selectedProject =
+        recordingProjects.find((project) => project.value === selected.projectId) ||
+        (selected.projectId
+          ? { label: selected.projectId, value: selected.projectId }
+          : null) ||
+        playbackProject ||
+        recordingProjects[0] ||
+        null;
+
+      if (!selectedProject) {
+        setSnackError("No Playwright project is available for playback");
+        return;
+      }
+
+      if (selected.source === "room") {
+        if (!selected.roomPath) {
+          setSnackError(`Could not load room recording ${selected.roomPath}`);
+          return;
+        }
+        const envelope = await getRoomRecordingEnvelope(
+          effectiveInsightId,
+          selected.roomPath,
+        );
+        if (!envelope) {
+          setSnackError(`Could not load room recording ${selected.roomPath}`);
+          return;
+        }
+        if (cancelled) return;
+        setPlaybackStartUrl(
+          mcpStartUrl || selected.startUrl || "https://example.com",
+        );
+        setPlaybackRecordingSource("room");
+        setPlaybackProject(selectedProject);
+        setSelectedRecording(selected.fileName);
+        initializeLoadedRecording(envelope, selected.fileName);
+        setSnackMessage(
+          `Matched room recording ${selected.roomPath} (${selected.reason})`,
+        );
+        return;
+      }
+
+      setPlaybackStartUrl(
+        mcpStartUrl || selected.startUrl || "https://example.com",
+      );
+      setPlaybackRecordingSource("project");
+      setPlaybackProject(selectedProject);
+      setSelectedRecording(selected.fileName);
+      setSnackMessage(`Matched ${selected.fileName} (${selected.reason})`);
+    })().catch((error) => {
+      if (cancelled) return;
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to resolve Playwright recording";
+      setSnackError(message);
+      if (!autoPlaybackErrorSentRef.current && toolContext) {
+        autoPlaybackErrorSentRef.current = true;
+        try {
+          sendMcpResponseToPlayground(
+            { played: false, error: message },
+            "error",
+            toolContext.parameters,
+          );
+        } catch {
+          // Nothing else to do if the iframe cannot notify Playground.
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    effectiveInsightId,
+    getRoomRecordingEnvelope,
+    initializeLoadedRecording,
+    isMcpPlaybackMode,
+    mcpRecordingFile,
+    mcpRecordingNameHint,
+    mcpPlaybackProjectId,
+    playbackProject,
+    recordingProjects,
+    toolContext,
+  ]);
 
   useEffect(() => {
     if (!isRecording || !session) {
@@ -513,6 +803,88 @@ export default function App() {
     setLatestFrame(null);
     setIsRecording(false);
   }, [createSession, mcpStartUrlInput]);
+
+  const replayRoomStepViaSocket = useCallback(
+    async (step: LoadedRecordingStep): Promise<boolean> => {
+      const type = String(step.type || "").toUpperCase();
+      const coords = getStepCoords(step);
+
+      switch (type) {
+        case "NAVIGATE": {
+          const url = typeof step.url === "string" ? step.url.trim() : "";
+          if (!url) {
+            setSnackError(`Step ${step.id ?? ""} is missing a URL`);
+            return false;
+          }
+          sendEvent({ type: "navigate", url, record: false });
+          await wait(Number(step.waitAfterMs) || 1200);
+          return true;
+        }
+        case "CLICK": {
+          if (!coords) {
+            setSnackError(`Step ${step.id ?? ""} is missing click coordinates`);
+            return false;
+          }
+          sendEvent({ type: "mouse-click", x: coords.x, y: coords.y, button: "left", record: false });
+          await wait(Number(step.waitAfterMs) || 400);
+          return true;
+        }
+        case "TYPE": {
+          const text =
+            typeof step.id === "number"
+              ? editedTypeValues[step.id] ?? String(step.text || "")
+              : String(step.text || "");
+          if (coords) {
+            sendEvent({ type: "mouse-click", x: coords.x, y: coords.y, button: "left", record: false });
+            await wait(150);
+          }
+          sendEvent({ type: "type-text", text, record: false });
+          if (step.pressEnter === true) {
+            await wait(100);
+            sendEvent({ type: "key", key: "Enter", code: "Enter", record: false });
+          }
+          await wait(Number(step.waitAfterMs) || 400);
+          return true;
+        }
+        case "SCROLL": {
+          const x = coords?.x ?? 0;
+          const y = coords?.y ?? 0;
+          const deltaY = Number(step.deltaY);
+          sendEvent({
+            type: "wheel",
+            x,
+            y,
+            deltaX: 0,
+            deltaY: Number.isFinite(deltaY) ? deltaY : 600,
+            record: false,
+          });
+          await wait(Number(step.waitAfterMs) || 300);
+          return true;
+        }
+        case "HOVER": {
+          if (!coords) {
+            setSnackError(`Step ${step.id ?? ""} is missing hover coordinates`);
+            return false;
+          }
+          sendEvent({ type: "mouse-move", x: coords.x, y: coords.y, record: false });
+          await wait(Number(step.waitAfterMs) || 250);
+          return true;
+        }
+        case "WAIT": {
+          await wait(Number(step.waitAfterMs) || 1000);
+          return true;
+        }
+        case "CONTEXT": {
+          await wait(Number(step.waitAfterMs) || 100);
+          return true;
+        }
+        default:
+          setSnackError(`Unsupported room playback step type: ${type || "unknown"}`);
+          return false;
+      }
+    },
+    [editedTypeValues, sendEvent],
+  );
 
   const handleStop = useCallback(async () => {
     if (isRecording) {
@@ -672,11 +1044,25 @@ export default function App() {
         throw new Error("Failed to save recording to the Playground room");
       }
 
+      const screenshotFrame = latestFrameRef.current;
+      const screenshot = screenshotFrame
+        ? await saveRoomScreenshot(
+            roomBoundInsightId,
+            buildScreenshotFileName(saved.fileName),
+            screenshotFrame,
+          )
+        : null;
+
       sendMcpResponseToPlayground(
         {
           saved: true,
           recordingPath: saved.roomPath,
           fileName: saved.fileName,
+          screenshotPath: screenshot?.roomPath ?? null,
+          screenshotMimeType: screenshot?.mimeType ?? "image/jpeg",
+          screenshotDataUrl: screenshotFrame
+            ? `data:image/jpeg;base64,${screenshotFrame}`
+            : null,
           sessionId: session.sessionId,
           roomId: toolContext.roomId,
         },
@@ -716,12 +1102,18 @@ export default function App() {
     isRecording,
     mcpRecordingNameHint,
     saveRoomRecording,
+    saveRoomScreenshot,
     sendEvent,
     session,
     toolContext,
   ]);
 
   const handleLoadRecording = useCallback(async () => {
+    if (playbackRecordingSource === "room" && loadedRecording) {
+      initializeLoadedRecording(loadedRecording, selectedRecording || "room recording");
+      return;
+    }
+
     if (!effectiveInsightId || !playbackProject || !selectedRecording) {
       setSnackError("Select a project and recording first");
       return;
@@ -741,37 +1133,15 @@ export default function App() {
     );
     setIsLoadingRecording(false);
     if (loaded) {
-      setLoadedRecording(loaded);
-      setExecutedStepIds(new Set());
-      setRunningStepId(null);
-      setIsPlaybackPaused(false);
-      setValueRequiredStepId(null);
-      pauseRequestedRef.current = false;
-      const initialValues: Record<number, string> = {};
-      Object.values(loaded.steps).forEach((tabSteps) => {
-        const maybeNested = tabSteps as Array<
-          LoadedRecordingStep | LoadedRecordingStep[]
-        >;
-        maybeNested
-          .flatMap((item) => (Array.isArray(item) ? item : [item]))
-          .forEach((step) => {
-            if (
-              step.type === "TYPE" &&
-              typeof step.id === "number" &&
-              typeof step.text === "string"
-            ) {
-              initialValues[step.id] = step.text;
-            }
-          });
-      });
-      setEditedTypeValues(initialValues);
-      setLoadedRecordingOpen(true);
-      setSnackMessage(`Loaded ${selectedRecording}`);
+      initializeLoadedRecording(loaded, selectedRecording);
     }
   }, [
     effectiveInsightId,
+    initializeLoadedRecording,
     loadRecording,
+    loadedRecording,
     playbackProject,
+    playbackRecordingSource,
     selectedRecording,
     session,
   ]);
@@ -806,6 +1176,21 @@ export default function App() {
 
       setValueRequiredStepId(null);
       setRunningStepId(step.id);
+
+      if (playbackRecordingSource === "room") {
+        const success = await replayRoomStepViaSocket(step);
+        setRunningStepId(null);
+        if (!success) {
+          return false;
+        }
+        setExecutedStepIds((prev) => new Set(prev).add(step.id as number));
+        if (pauseRequestedRef.current) {
+          setSnackMessage(`Playback paused after step ${step.id}`);
+          return false;
+        }
+        return true;
+      }
+
       const paramValues =
         step.type === "TYPE" && typeof step.label === "string"
           ? {
@@ -842,12 +1227,18 @@ export default function App() {
       editedTypeValues,
       effectiveInsightId,
       playbackProject,
+      playbackRecordingSource,
       replaySingleStep,
+      replayRoomStepViaSocket,
       selectedRecording,
     ],
   );
 
-  const handleRunLoadedRecording = useCallback(async () => {
+  const handleRunLoadedRecording = useCallback(async (): Promise<{
+    completed: boolean;
+    stepsRun: number;
+    pausedAtStepId?: number;
+  } | null> => {
     if (
       !effectiveInsightId ||
       !playbackProject ||
@@ -855,13 +1246,14 @@ export default function App() {
       !loadedRecording
     ) {
       setSnackError("Load a recording before running it");
-      return;
+      return null;
     }
 
     setIsRunningRecording(true);
     setIsPlaybackPaused(false);
     setValueRequiredStepId(null);
     pauseRequestedRef.current = false;
+    let stepsRun = 0;
     try {
       for (const { tabId, step } of flattenedSteps) {
         if (step.shouldRun === false || typeof step.id !== "number") {
@@ -871,12 +1263,16 @@ export default function App() {
           continue;
         }
         const shouldContinue = await handleRunStep(tabId, step);
+        if (shouldContinue) {
+          stepsRun += 1;
+        }
         if (!shouldContinue) {
-          return;
+          return { completed: false, stepsRun, pausedAtStepId: step.id };
         }
       }
       setSnackMessage(`Finished playback: ${selectedRecording}`);
       setIsPlaybackPaused(false);
+      return { completed: true, stepsRun };
     } finally {
       setIsRunningRecording(false);
     }
@@ -888,6 +1284,114 @@ export default function App() {
     loadedRecording,
     playbackProject,
     selectedRecording,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isMcpPlaybackMode ||
+      autoPlaybackLoadStartedRef.current ||
+      connectionState !== "connected" ||
+      !session ||
+      !playbackProject ||
+      !selectedRecording ||
+      isLoadingRecording
+    ) {
+      return;
+    }
+
+    autoPlaybackLoadStartedRef.current = true;
+    handleLoadRecording();
+  }, [
+    connectionState,
+    handleLoadRecording,
+    isLoadingRecording,
+    isMcpPlaybackMode,
+    playbackProject,
+    selectedRecording,
+    session,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isMcpPlaybackMode ||
+      !toolContext ||
+      autoPlaybackRunStartedRef.current ||
+      !loadedRecording ||
+      !selectedRecording ||
+      !session
+    ) {
+      return;
+    }
+
+    autoPlaybackRunStartedRef.current = true;
+    setPlaybackControlsOpen(true);
+    setLoadedRecordingOpen(true);
+
+    (async () => {
+      try {
+        const result = await handleRunLoadedRecording();
+        if (!result) {
+          throw new Error("Playback did not start");
+        }
+
+        const screenshotFrame = latestFrameRef.current;
+        let screenshot:
+          | { roomPath: string; mimeType: string; fileName: string }
+          | null = null;
+
+        if (toolContext.roomId && effectiveInsightId && screenshotFrame) {
+          await bindSemossInsightToRoom(toolContext.roomId);
+          screenshot = await saveRoomScreenshot(
+            effectiveInsightId,
+            buildScreenshotFileName(selectedRecording, "playwright-playback"),
+            screenshotFrame,
+          );
+        }
+
+        sendMcpResponseToPlayground(
+          {
+            played: result.completed,
+            status: result.completed ? "completed" : "paused",
+            recordingFile: selectedRecording,
+            projectId: playbackProject?.value ?? null,
+            stepsRun: result.stepsRun,
+            pausedAtStepId: result.pausedAtStepId ?? null,
+            screenshotPath: screenshot?.roomPath ?? null,
+            screenshotMimeType: screenshot?.mimeType ?? "image/jpeg",
+            screenshotDataUrl: screenshotFrame
+              ? `data:image/jpeg;base64,${screenshotFrame}`
+              : null,
+            sessionId: session.sessionId,
+            roomId: toolContext.roomId,
+          },
+          result.completed ? "success" : "paused",
+          toolContext.parameters,
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to play recording";
+        setSnackError(message);
+        try {
+          sendMcpResponseToPlayground(
+            { played: false, error: message },
+            "error",
+            toolContext.parameters,
+          );
+        } catch {
+          // Nothing else to do if the iframe cannot notify Playground.
+        }
+      }
+    })();
+  }, [
+    effectiveInsightId,
+    handleRunLoadedRecording,
+    isMcpPlaybackMode,
+    loadedRecording,
+    playbackProject,
+    saveRoomScreenshot,
+    selectedRecording,
+    session,
+    toolContext,
   ]);
 
   const remoteWidth = session?.viewport.width ?? 1365;
@@ -1009,7 +1513,7 @@ export default function App() {
         </Alert>
       )}
 
-      {isPlaygroundMode && !session && !mcpStartUrl && (
+      {isPlaygroundMode && !isMcpPlaybackMode && !session && !mcpStartUrl && (
         <Alert
           severity="info"
           sx={{ mx: 0.5, mt: 0.5, py: 0.5, alignItems: "center" }}
@@ -1117,7 +1621,10 @@ export default function App() {
                   size="small"
                   options={recordingProjects}
                   value={playbackProject}
-                  onChange={(_, value) => setPlaybackProject(value)}
+                  onChange={(_, value) => {
+                    setPlaybackRecordingSource("project");
+                    setPlaybackProject(value);
+                  }}
                   loading={isLoadingPlaybackProjects}
                   getOptionLabel={(option) => option.label}
                   isOptionEqualToValue={(option, value) =>
@@ -1135,6 +1642,7 @@ export default function App() {
                   options={recordingFiles}
                   value={selectedRecording}
                   onChange={(_, value) => {
+                    setPlaybackRecordingSource("project");
                     setSelectedRecording(value);
                     setLoadedRecording(null);
                     setLoadedRecordingOpen(false);
