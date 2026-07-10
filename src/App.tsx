@@ -285,29 +285,40 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+async function resolveScreenshotFollowUpModelId(
+  roomId: string,
+): Promise<string> {
+  if (!roomId) {
+    return "";
+  }
+
+  try {
+    return await getRoomActiveModelId(roomId);
+  } catch (error) {
+    console.warn("Unable to resolve Playground room model for screenshot follow-up", error);
+    return "";
+  }
+}
+
 function scheduleScreenshotAskPlaygroundFollowUp(
   roomId: string,
-  screenshotDataUri: string | null | undefined,
+  modelId: string,
+  screenshotImage: string | null | undefined,
   command: string,
 ): void {
-  if (!roomId || !screenshotDataUri) {
+  if (!roomId || !modelId || !screenshotImage) {
     return;
   }
 
   window.setTimeout(() => {
     void (async () => {
       try {
-        const modelId = await getRoomActiveModelId(roomId);
-        if (!modelId) {
-          console.warn("Unable to resolve Playground room model for screenshot follow-up");
-          return;
-        }
-        await askPlaygroundWithImage(roomId, modelId, screenshotDataUri, command);
+        await askPlaygroundWithImage(roomId, modelId, screenshotImage, command);
       } catch (error) {
         console.warn("Unable to send screenshot follow-up to Playground", error);
       }
     })();
-  }, 1500);
+  }, 3500);
 }
 
 export default function App() {
@@ -1120,7 +1131,7 @@ export default function App() {
         );
       }
       await bindSemossInsightToRoom(toolContext.roomId);
-      const roomBoundInsightId = effectiveInsightId;
+      const roomBoundInsightId = getSemossInsightId() || effectiveInsightId;
       if (!roomBoundInsightId) {
         throw new Error("No SEMOSS insight is available for room file save");
       }
@@ -1180,6 +1191,9 @@ export default function App() {
         screenshotPng,
         screenshotFileName,
       );
+      const screenshotFollowUpModelId = await resolveScreenshotFollowUpModelId(
+        toolContext.roomId,
+      );
 
       sendMcpResponseToPlayground(
         {
@@ -1189,9 +1203,6 @@ export default function App() {
           screenshotPath: screenshot?.roomPath ?? null,
           screenshotSourceUrl: screenshot?.roomPath ?? null,
           screenshotMimeType: screenshot?.mimeType ?? "image/png",
-          screenshotDataUrl: screenshotPng
-            ? `data:image/png;base64,${screenshotPng}`
-            : null,
           media: screenshotMediaPart ? [screenshotMediaPart] : [],
           messageParts: screenshotMediaPart ? [screenshotMediaPart] : [],
           sessionId: session.sessionId,
@@ -1203,7 +1214,8 @@ export default function App() {
       );
       scheduleScreenshotAskPlaygroundFollowUp(
         toolContext.roomId,
-        screenshotPng ? `data:image/png;base64,${screenshotPng}` : null,
+        screenshotFollowUpModelId,
+        screenshot?.roomPath ?? null,
         `A Playwright recording was saved to ${saved.roomPath}. The attached image is the final browser screenshot captured for that recording.`,
       );
       sendEvent({ type: "close-session" });
@@ -1492,6 +1504,9 @@ export default function App() {
           screenshotPng,
           screenshotFileName,
         );
+        const screenshotFollowUpModelId = await resolveScreenshotFollowUpModelId(
+          toolContext.roomId,
+        );
 
         sendMcpResponseToPlayground(
           {
@@ -1504,9 +1519,6 @@ export default function App() {
             screenshotPath: screenshot?.roomPath ?? null,
             screenshotSourceUrl: screenshot?.roomPath ?? null,
             screenshotMimeType: screenshot?.mimeType ?? "image/png",
-            screenshotDataUrl: screenshotPng
-              ? `data:image/png;base64,${screenshotPng}`
-              : null,
             media: screenshotMediaPart ? [screenshotMediaPart] : [],
             messageParts: screenshotMediaPart ? [screenshotMediaPart] : [],
             sessionId: session.sessionId,
@@ -1518,7 +1530,8 @@ export default function App() {
         );
         scheduleScreenshotAskPlaygroundFollowUp(
           toolContext.roomId,
-          screenshotPng ? `data:image/png;base64,${screenshotPng}` : null,
+          screenshotFollowUpModelId,
+          screenshot?.roomPath ?? null,
           `A Playwright recording playback ${result.completed ? "completed" : "paused"}. The attached image is the final browser screenshot captured after playback.`,
         );
       } catch (error) {

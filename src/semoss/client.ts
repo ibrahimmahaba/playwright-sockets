@@ -1,5 +1,6 @@
 import { Env, Insight } from "@semoss/sdk";
 import type { McpToolContext } from "../types/browserEvents";
+import { runPixel } from "./pixel";
 
 type EnvWithTool = typeof Env & { TOOL?: unknown };
 type McpToolStatus = "success" | "error" | "cancelled" | "paused";
@@ -63,6 +64,7 @@ export const insight = new Insight();
 let initialized = false;
 let toolContext = normalizeToolContext((Env as EnvWithTool).TOOL);
 let boundRoomId = "";
+let boundInsightId = "";
 let roomBinding: Promise<void> | null = null;
 const subscribers = new Set<(context: McpToolContext | null) => void>();
 
@@ -158,7 +160,7 @@ export function getMcpToolContext(): McpToolContext | null {
 }
 
 export function getSemossInsightId(): string {
-  return insight.insightId;
+  return insight.insightId || boundInsightId;
 }
 
 export async function runAppMcpTool<T = unknown>(
@@ -170,7 +172,7 @@ export async function runAppMcpTool<T = unknown>(
     throw new Error("SEMOSS app id is required to run an app MCP tool");
   }
 
-  const { pixelReturn } = await insight.actions.run<[unknown]>(
+  const { pixelReturn } = await runPixel<unknown>(
     `RunMCPTool(project=[${JSON.stringify(appId)}], function=[${JSON.stringify(
       name,
     )}], paramValues=[${JSON.stringify(parameters)}]);`,
@@ -212,10 +214,10 @@ export async function getRoomActiveModelId(roomId: string): Promise<string> {
     return "";
   }
 
-  const { pixelReturn } = await insight.actions.run<
-    [PlaygroundMessage[], RoomOptionsResponse]
+  const { pixelReturn } = await runPixel<
+    PlaygroundMessage[] | RoomOptionsResponse
   >(
-    `GetPlaygroundMessages(roomId=${JSON.stringify(normalizedRoomId)}, limit=[25], offset=[0], sort=["DESC"]); GetRoomOptions(roomId=${JSON.stringify(normalizedRoomId)});`,
+    `GetPlaygroundMessages(roomId=${JSON.stringify([normalizedRoomId])}, limit=[25], offset=[0], sort=["DESC"]); GetRoomOptions(roomId=${JSON.stringify(normalizedRoomId)});`,
   );
 
   const messages = pixelReturn?.[0]?.output;
@@ -266,7 +268,7 @@ export async function askPlaygroundWithImage(
     return;
   }
 
-  await insight.actions.run(
+  await runPixel(
     `AskPlayground(engine=${JSON.stringify([normalizedEngineId])}, roomId=${JSON.stringify([normalizedRoomId])}, command=${JSON.stringify([`<encode>${command}</encode>`])}, image=${JSON.stringify([normalizedImage])}, paramValues=[${JSON.stringify({})}]);`,
   );
 }
@@ -275,9 +277,6 @@ export async function bindSemossInsightToRoom(roomId: string): Promise<void> {
   const normalizedRoomId = roomId.trim();
   if (!normalizedRoomId) {
     throw new Error("Room ID is required to bind the SEMOSS insight");
-  }
-  if (!initialized || !insight.insightId) {
-    throw new Error("SEMOSS insight is not initialized");
   }
   if (boundRoomId === normalizedRoomId) {
     return;
@@ -290,9 +289,12 @@ export async function bindSemossInsightToRoom(roomId: string): Promise<void> {
   }
 
   roomBinding = (async () => {
-    await insight.actions.run(
+    const response = await runPixel(
       `SetRoomForInsight(roomId=${JSON.stringify(normalizedRoomId)});`,
     );
+    if (response.insightID) {
+      boundInsightId = response.insightID;
+    }
     boundRoomId = normalizedRoomId;
   })();
 

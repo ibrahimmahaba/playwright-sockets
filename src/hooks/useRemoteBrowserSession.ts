@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { runPixel } from '@semoss/sdk';
+import { fetchWithCsrf, MODULE_PATH, runPixel } from '../semoss/pixel';
 import type {
   LoadedRecording,
   RemoteBrowserSessionInfo,
@@ -13,42 +13,7 @@ import type {
   StepsEnvelope,
 } from '../types/browserEvents';
 
-const MODULE_PATH = process.env.MODULE || '/Monolith';
 const API_BASE = `${MODULE_PATH}/api/browser-sessions`;
-
-let csrfToken = '';
-
-async function getCsrfToken(): Promise<string> {
-  if (csrfToken) return csrfToken;
-
-  const response = await fetch(`${MODULE_PATH}/api/config/fetchCsrf`, {
-    credentials: 'include',
-    headers: {
-      'X-CSRF-Token': 'fetch',
-    },
-  });
-
-  csrfToken = response.headers.get('X-CSRF-Token') || response.headers.get('x-csrf-token') || '';
-  return csrfToken;
-}
-
-async function fetchWithCsrf(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const method = (init.method || 'GET').toUpperCase();
-  const headers = new Headers(init.headers);
-
-  if (method !== 'GET' && method !== 'HEAD' && !headers.has('X-CSRF-Token')) {
-    const token = await getCsrfToken();
-    if (token) {
-      headers.set('X-CSRF-Token', token);
-    }
-  }
-
-  return fetch(input, {
-    credentials: 'include',
-    ...init,
-    headers,
-  });
-}
 
 interface UseRemoteBrowserSessionReturn {
   session: RemoteBrowserSessionInfo | null;
