@@ -4,19 +4,6 @@ import { runPixel } from "./pixel";
 
 type EnvWithTool = typeof Env & { TOOL?: unknown };
 type McpToolStatus = "success" | "error" | "cancelled" | "paused";
-type McpMediaPart = {
-  type: "MEDIA";
-  mediaInfo: {
-    base64Data?: string;
-    fileLocation?: string;
-    fileName: string;
-    mimeType?: string;
-    sourceUrl?: string;
-  };
-};
-type McpResponseOptions = {
-  mediaParts?: McpMediaPart[];
-};
 type PlaygroundMessage = {
   io?: string;
   modelId?: string;
@@ -45,7 +32,6 @@ type McpToolResponse = {
     roomId: string;
     tool_status: McpToolStatus;
     executedParameters: Record<string, unknown>;
-    mediaParts?: McpMediaPart[];
   };
 };
 
@@ -268,10 +254,20 @@ export async function askPlaygroundWithImage(
     return;
   }
 
-  await runPixel(
+  const response = await runPixel(
     `AskPlayground(engine=${JSON.stringify([normalizedEngineId])}, roomId=${JSON.stringify([normalizedRoomId])}, command=${JSON.stringify([`<encode>${command}</encode>`])}, image=${JSON.stringify([normalizedImage])}, paramValues=[${JSON.stringify({})}]);`,
     getSemossInsightId(),
   );
+  const errors = response.pixelReturn
+    ?.filter((item) => String(item.operationType || "").includes("ERROR"))
+    .map((item) =>
+      typeof item.output === "string"
+        ? item.output
+        : JSON.stringify(item.output),
+    );
+  if (errors?.length) {
+    throw new Error(errors.join("\n"));
+  }
 }
 
 export async function bindSemossInsightToRoom(roomId: string): Promise<void> {
@@ -318,7 +314,6 @@ export function sendMcpResponseToPlayground(
   response: unknown,
   toolStatus: McpToolStatus = "success",
   executedParameters: Record<string, unknown> = {},
-  options: McpResponseOptions = {},
 ): void {
   const payload =
     typeof response === "string" ? response : JSON.stringify(response);
@@ -349,9 +344,6 @@ export function sendMcpResponseToPlayground(
       roomId: toolContext.roomId,
       tool_status: toolStatus,
       executedParameters,
-      ...(options.mediaParts?.length
-        ? { mediaParts: options.mediaParts }
-        : {}),
     },
   };
 

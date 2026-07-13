@@ -82,17 +82,6 @@ type ResolvePlaywrightRecordingResponse = {
 
 type PlaybackRecordingSource = "project" | "room";
 
-type PlaygroundMediaPart = {
-  type: "MEDIA";
-  mediaInfo: {
-    base64Data?: string;
-    fileLocation?: string;
-    fileName: string;
-    mimeType?: string;
-    sourceUrl?: string;
-  };
-};
-
 function flattenEnvelopeSteps(
   envelope: StepsEnvelope,
 ): Array<Record<string, unknown>> {
@@ -206,27 +195,6 @@ function buildScreenshotFileName(fileName: string, fallback = "screenshot") {
   return `${base}.png`;
 }
 
-function buildScreenshotMediaPart(
-  screenshot: RoomAssetSaveResponse | null,
-  base64Png: string | null,
-  fallbackFileName: string,
-): PlaygroundMediaPart | null {
-  if (!screenshot && !base64Png) {
-    return null;
-  }
-
-  return {
-    type: "MEDIA",
-    mediaInfo: {
-      fileName: screenshot?.fileName ?? fallbackFileName,
-      mimeType: screenshot?.mimeType ?? "image/png",
-      ...(base64Png ? { base64Data: base64Png } : {}),
-      ...(screenshot?.roomPath ? { fileLocation: screenshot.roomPath } : {}),
-      ...(screenshot?.roomPath ? { sourceUrl: screenshot.roomPath } : {}),
-    },
-  };
-}
-
 function convertJpegBase64ToPngBase64(base64Jpeg: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -285,40 +253,34 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-async function resolveScreenshotFollowUpModelId(
-  roomId: string,
-): Promise<string> {
-  if (!roomId) {
-    return "";
-  }
-
-  try {
-    return await getRoomActiveModelId(roomId);
-  } catch (error) {
-    console.warn("Unable to resolve Playground room model for screenshot follow-up", error);
-    return "";
-  }
-}
-
 function scheduleScreenshotAskPlaygroundFollowUp(
   roomId: string,
-  modelId: string,
-  screenshotImage: string | null | undefined,
+  screenshotPng: string | null | undefined,
   command: string,
 ): void {
-  if (!roomId || !modelId || !screenshotImage) {
+  if (!roomId || !screenshotPng) {
     return;
   }
 
   window.setTimeout(() => {
     void (async () => {
       try {
-        await askPlaygroundWithImage(roomId, modelId, screenshotImage, command);
+        const modelId = await getRoomActiveModelId(roomId);
+        if (!modelId) {
+          throw new Error("The active Playground model could not be resolved");
+        }
+
+        await askPlaygroundWithImage(
+          roomId,
+          modelId,
+          `data:image/png;base64,${screenshotPng}`,
+          command,
+        );
       } catch (error) {
         console.warn("Unable to send screenshot follow-up to Playground", error);
       }
     })();
-  }, 3500);
+  }, 6000);
 }
 
 export default function App() {
@@ -1186,15 +1148,6 @@ export default function App() {
             screenshotPng,
           )
         : null;
-      const screenshotMediaPart = buildScreenshotMediaPart(
-        screenshot,
-        screenshotPng,
-        screenshotFileName,
-      );
-      const screenshotFollowUpModelId = await resolveScreenshotFollowUpModelId(
-        toolContext.roomId,
-      );
-
       sendMcpResponseToPlayground(
         {
           saved: true,
@@ -1203,20 +1156,16 @@ export default function App() {
           screenshotPath: screenshot?.roomPath ?? null,
           screenshotSourceUrl: screenshot?.roomPath ?? null,
           screenshotMimeType: screenshot?.mimeType ?? "image/png",
-          media: screenshotMediaPart ? [screenshotMediaPart] : [],
-          messageParts: screenshotMediaPart ? [screenshotMediaPart] : [],
           sessionId: session.sessionId,
           roomId: toolContext.roomId,
         },
         "success",
         toolContext.parameters,
-        screenshotMediaPart ? { mediaParts: [screenshotMediaPart] } : {},
       );
       scheduleScreenshotAskPlaygroundFollowUp(
         toolContext.roomId,
-        screenshotFollowUpModelId,
-        screenshot?.roomPath ?? null,
-        `A Playwright recording was saved to ${saved.roomPath}. The attached image is the final browser screenshot captured for that recording.`,
+        screenshotPng,
+        `The attached image is the final browser screenshot for the Playwright recording saved to ${saved.roomPath}. Acknowledge the saved recording and briefly describe what is visible in the screenshot. Do not call any tools.`,
       );
       sendEvent({ type: "close-session" });
       await closeSession();
@@ -1499,15 +1448,6 @@ export default function App() {
             screenshotPng,
           );
         }
-        const screenshotMediaPart = buildScreenshotMediaPart(
-          screenshot,
-          screenshotPng,
-          screenshotFileName,
-        );
-        const screenshotFollowUpModelId = await resolveScreenshotFollowUpModelId(
-          toolContext.roomId,
-        );
-
         sendMcpResponseToPlayground(
           {
             played: result.completed,
@@ -1519,20 +1459,16 @@ export default function App() {
             screenshotPath: screenshot?.roomPath ?? null,
             screenshotSourceUrl: screenshot?.roomPath ?? null,
             screenshotMimeType: screenshot?.mimeType ?? "image/png",
-            media: screenshotMediaPart ? [screenshotMediaPart] : [],
-            messageParts: screenshotMediaPart ? [screenshotMediaPart] : [],
             sessionId: session.sessionId,
             roomId: toolContext.roomId,
           },
           result.completed ? "success" : "paused",
           toolContext.parameters,
-          screenshotMediaPart ? { mediaParts: [screenshotMediaPart] } : {},
         );
         scheduleScreenshotAskPlaygroundFollowUp(
           toolContext.roomId,
-          screenshotFollowUpModelId,
-          screenshot?.roomPath ?? null,
-          `A Playwright recording playback ${result.completed ? "completed" : "paused"}. The attached image is the final browser screenshot captured after playback.`,
+          screenshotPng,
+          `The attached image is the final browser screenshot after Playwright recording playback ${result.completed ? "completed" : "paused"}. Briefly describe what is visible in the screenshot. Do not call any tools.`,
         );
       } catch (error) {
         const message =
