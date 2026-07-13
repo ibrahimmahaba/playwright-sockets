@@ -49,13 +49,10 @@ import type {
   LoadedRecordingStep,
   McpToolContext,
   RemoteBrowserRecordedStep,
-  RoomAssetSaveResponse,
   StepsEnvelope,
 } from "./types/browserEvents";
 import {
-  askPlaygroundWithImage,
   bindSemossInsightToRoom,
-  getRoomActiveModelId,
   getSemossInsightId,
   initSemoss,
   runAppMcpTool,
@@ -190,45 +187,6 @@ function isPlayRecordingTool(context: McpToolContext | null): boolean {
   );
 }
 
-function buildScreenshotFileName(fileName: string, fallback = "screenshot") {
-  const base = sanitizeFilePart(fileName.replace(/\.json$/i, "")) || fallback;
-  return `${base}.png`;
-}
-
-function convertJpegBase64ToPngBase64(base64Jpeg: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth || image.width;
-      canvas.height = image.naturalHeight || image.height;
-      const context = canvas.getContext("2d");
-      if (!context) {
-        reject(new Error("Unable to create PNG screenshot canvas"));
-        return;
-      }
-      context.drawImage(image, 0, 0);
-      resolve(canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""));
-    };
-    image.onerror = () => reject(new Error("Unable to decode browser screenshot"));
-    image.src = `data:image/jpeg;base64,${base64Jpeg}`;
-  });
-}
-
-async function buildContentAddressedMediaFileName(base64Png: string): Promise<string> {
-  const binary = window.atob(base64Png.replace(/\s+/g, ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  const digest = await window.crypto.subtle.digest("SHA-256", bytes);
-  const hash = Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-  return `media_${hash.slice(0, 16)}.png`;
-}
-
 function normalizeBrowserUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -253,36 +211,6 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function scheduleScreenshotAskPlaygroundFollowUp(
-  roomId: string,
-  screenshotPng: string | null | undefined,
-  command: string,
-): void {
-  if (!roomId || !screenshotPng) {
-    return;
-  }
-
-  window.setTimeout(() => {
-    void (async () => {
-      try {
-        const modelId = await getRoomActiveModelId(roomId);
-        if (!modelId) {
-          throw new Error("The active Playground model could not be resolved");
-        }
-
-        await askPlaygroundWithImage(
-          roomId,
-          modelId,
-          `data:image/png;base64,${screenshotPng}`,
-          command,
-        );
-      } catch (error) {
-        console.warn("Unable to send screenshot follow-up to Playground", error);
-      }
-    })();
-  }, 6000);
-}
-
 export default function App() {
   const { insightId } = useInsight();
   const {
@@ -296,7 +224,6 @@ export default function App() {
     saveRecording,
     getRecordingEnvelope,
     saveRoomRecording,
-    saveRoomScreenshot,
     listRecordingProjects,
     listRecordingFiles,
     getRoomRecordingEnvelope,
@@ -371,7 +298,6 @@ export default function App() {
   const autoPlaybackErrorSentRef = useRef(false);
   const returningToPlaygroundRef = useRef(false);
   const pauseRequestedRef = useRef(false);
-  const latestFrameRef = useRef<string | null>(null);
 
   const isPlaygroundMode = !!toolContext;
   const isMcpPlaybackMode = isPlayRecordingTool(toolContext);
@@ -485,10 +411,6 @@ export default function App() {
     const today = new Date().toISOString().split("T")[0];
     return `${title}-${today}`;
   }, [saveTitle]);
-
-  useEffect(() => {
-    latestFrameRef.current = latestFrame;
-  }, [latestFrame]);
 
   useEffect(() => {
     let mounted = true;
@@ -696,6 +618,7 @@ export default function App() {
       if (toolContext?.roomId) {
         await bindSemossInsightToRoom(toolContext.roomId);
       }
+      const roomInsightId = getSemossInsightId() || effectiveInsightId;
 
       const resolved =
         await runAppMcpTool<ResolvePlaywrightRecordingResponse>(
@@ -757,7 +680,7 @@ export default function App() {
           return;
         }
         const envelope = await getRoomRecordingEnvelope(
-          effectiveInsightId,
+          roomInsightId,
           selected.roomPath,
         );
         if (!envelope) {
@@ -1134,38 +1057,16 @@ export default function App() {
         throw new Error("Failed to save recording to the Playground room");
       }
 
-      const screenshotFrame = latestFrameRef.current;
-      const screenshotPng = screenshotFrame
-        ? await convertJpegBase64ToPngBase64(screenshotFrame)
-        : null;
-      const screenshotFileName = screenshotPng
-        ? await buildContentAddressedMediaFileName(screenshotPng)
-        : buildScreenshotFileName(saved.fileName);
-      const screenshot = screenshotPng
-        ? await saveRoomScreenshot(
-            roomBoundInsightId,
-            screenshotFileName,
-            screenshotPng,
-          )
-        : null;
       sendMcpResponseToPlayground(
         {
           saved: true,
           recordingPath: saved.roomPath,
           fileName: saved.fileName,
-          screenshotPath: screenshot?.roomPath ?? null,
-          screenshotSourceUrl: screenshot?.roomPath ?? null,
-          screenshotMimeType: screenshot?.mimeType ?? "image/png",
           sessionId: session.sessionId,
           roomId: toolContext.roomId,
         },
         "success",
         toolContext.parameters,
-      );
-      scheduleScreenshotAskPlaygroundFollowUp(
-        toolContext.roomId,
-        screenshotPng,
-        `The attached image is the final browser screenshot for the Playwright recording saved to ${saved.roomPath}. Acknowledge the saved recording and briefly describe what is visible in the screenshot. Do not call any tools.`,
       );
       sendEvent({ type: "close-session" });
       await closeSession();
@@ -1199,7 +1100,6 @@ export default function App() {
     isRecording,
     mcpRecordingNameHint,
     saveRoomRecording,
-    saveRoomScreenshot,
     sendEvent,
     session,
     toolContext,
@@ -1431,23 +1331,6 @@ export default function App() {
           throw new Error("Playback did not start");
         }
 
-        const screenshotFrame = latestFrameRef.current;
-        const screenshotPng = screenshotFrame
-          ? await convertJpegBase64ToPngBase64(screenshotFrame)
-          : null;
-        let screenshot: RoomAssetSaveResponse | null = null;
-        const screenshotFileName = screenshotPng
-          ? await buildContentAddressedMediaFileName(screenshotPng)
-          : buildScreenshotFileName(selectedRecording, "playwright-playback");
-
-        if (toolContext.roomId && effectiveInsightId && screenshotPng) {
-          await bindSemossInsightToRoom(toolContext.roomId);
-          screenshot = await saveRoomScreenshot(
-            effectiveInsightId,
-            screenshotFileName,
-            screenshotPng,
-          );
-        }
         sendMcpResponseToPlayground(
           {
             played: result.completed,
@@ -1456,19 +1339,11 @@ export default function App() {
             projectId: playbackProject?.value ?? null,
             stepsRun: result.stepsRun,
             pausedAtStepId: result.pausedAtStepId ?? null,
-            screenshotPath: screenshot?.roomPath ?? null,
-            screenshotSourceUrl: screenshot?.roomPath ?? null,
-            screenshotMimeType: screenshot?.mimeType ?? "image/png",
             sessionId: session.sessionId,
             roomId: toolContext.roomId,
           },
           result.completed ? "success" : "paused",
           toolContext.parameters,
-        );
-        scheduleScreenshotAskPlaygroundFollowUp(
-          toolContext.roomId,
-          screenshotPng,
-          `The attached image is the final browser screenshot after Playwright recording playback ${result.completed ? "completed" : "paused"}. Briefly describe what is visible in the screenshot. Do not call any tools.`,
         );
       } catch (error) {
         const message =
@@ -1491,7 +1366,6 @@ export default function App() {
     isMcpPlaybackMode,
     loadedRecording,
     playbackProject,
-    saveRoomScreenshot,
     selectedRecording,
     session,
     toolContext,

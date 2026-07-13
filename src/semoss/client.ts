@@ -4,13 +4,6 @@ import { runPixel } from "./pixel";
 
 type EnvWithTool = typeof Env & { TOOL?: unknown };
 type McpToolStatus = "success" | "error" | "cancelled" | "paused";
-type PlaygroundMessage = {
-  io?: string;
-  modelId?: string;
-};
-type RoomOptionsResponse = {
-  OPTIONS?: unknown;
-};
 type InsightWithMcpResponse = typeof insight & {
   actions: typeof insight.actions & {
     sendMCPResponseToPlayground?: (
@@ -162,6 +155,7 @@ export async function runAppMcpTool<T = unknown>(
     `RunMCPTool(project=[${JSON.stringify(appId)}], function=[${JSON.stringify(
       name,
     )}], paramValues=[${JSON.stringify(parameters)}]);`,
+    getSemossInsightId(),
   );
 
   const output = pixelReturn?.[0]?.output;
@@ -169,105 +163,6 @@ export async function runAppMcpTool<T = unknown>(
     return JSON.parse(output) as T;
   }
   return output as T;
-}
-
-function readNestedString(value: unknown, keys: string[]): string {
-  if (!value || typeof value !== "object") {
-    return "";
-  }
-
-  const record = value as Record<string, unknown>;
-  for (const key of keys) {
-    const direct = record[key];
-    if (typeof direct === "string" && direct.trim()) {
-      return direct.trim();
-    }
-  }
-
-  for (const nested of Object.values(record)) {
-    const found = readNestedString(nested, keys);
-    if (found) {
-      return found;
-    }
-  }
-
-  return "";
-}
-
-export async function getRoomActiveModelId(roomId: string): Promise<string> {
-  const normalizedRoomId = roomId.trim();
-  if (!normalizedRoomId) {
-    return "";
-  }
-
-  const { pixelReturn } = await runPixel<
-    PlaygroundMessage[] | RoomOptionsResponse
-  >(
-    `GetPlaygroundMessages(roomId=${JSON.stringify([normalizedRoomId])}, limit=[25], offset=[0], sort=["DESC"]); GetRoomOptions(roomId=${JSON.stringify(normalizedRoomId)});`,
-  );
-
-  const messages = pixelReturn?.[0]?.output;
-  if (Array.isArray(messages)) {
-    for (const message of messages) {
-      if (
-        message &&
-        typeof message === "object" &&
-        (message as PlaygroundMessage).io === "INPUT" &&
-        typeof (message as PlaygroundMessage).modelId === "string" &&
-        (message as PlaygroundMessage).modelId?.trim()
-      ) {
-        return (message as PlaygroundMessage).modelId!.trim();
-      }
-    }
-
-    for (const message of messages) {
-      if (
-        message &&
-        typeof message === "object" &&
-        typeof (message as PlaygroundMessage).modelId === "string" &&
-        (message as PlaygroundMessage).modelId?.trim()
-      ) {
-        return (message as PlaygroundMessage).modelId!.trim();
-      }
-    }
-  }
-
-  const options = pixelReturn?.[1]?.output?.OPTIONS;
-  return readNestedString(options, [
-    "engine_id",
-    "modelId",
-    "model_id",
-    "app_id",
-  ]);
-}
-
-export async function askPlaygroundWithImage(
-  roomId: string,
-  engineId: string,
-  image: string,
-  command: string,
-): Promise<void> {
-  const normalizedRoomId = roomId.trim();
-  const normalizedEngineId = engineId.trim();
-  const normalizedImage = image.trim();
-  if (!normalizedRoomId || !normalizedEngineId || !normalizedImage) {
-    return;
-  }
-
-  const response = await runPixel(
-    `AskPlayground(engine=${JSON.stringify([normalizedEngineId])}, roomId=${JSON.stringify([normalizedRoomId])}, command=${JSON.stringify([`<encode>${command}</encode>`])}, image=${JSON.stringify([normalizedImage])}, paramValues=[${JSON.stringify({})}]);`,
-    getSemossInsightId(),
-  );
-  const errors = response.pixelReturn
-    ?.filter((item) => String(item.operationType || "").includes("ERROR"))
-    .map((item) =>
-      typeof item.output === "string"
-        ? item.output
-        : JSON.stringify(item.output),
-    );
-  if (errors?.length) {
-    throw new Error(errors.join("\n"));
-  }
 }
 
 export async function bindSemossInsightToRoom(roomId: string): Promise<void> {

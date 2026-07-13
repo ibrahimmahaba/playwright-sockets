@@ -4,7 +4,6 @@ import type {
   LoadedRecording,
   RemoteBrowserSessionInfo,
   RemoteBrowserRecordedStep,
-  RoomAssetSaveResponse,
   RecordingProjectOption,
   ReplayStepResult,
   RoomRecordingSaveResponse,
@@ -35,11 +34,6 @@ interface UseRemoteBrowserSessionReturn {
     fileName: string,
     envelope: StepsEnvelope,
   ) => Promise<RoomRecordingSaveResponse | null>;
-  saveRoomScreenshot: (
-    insightId: string,
-    fileName: string,
-    base64Png: string,
-  ) => Promise<RoomAssetSaveResponse | null>;
   listRecordingProjects: (insightId: string) => Promise<RecordingProjectOption[]>;
   listRecordingFiles: (insightId: string, projectId: string) => Promise<string[]>;
   getRoomRecordingEnvelope: (
@@ -220,46 +214,6 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     [],
   );
 
-  const saveRoomScreenshot = useCallback(
-    async (insightId: string, fileName: string, base64Png: string): Promise<RoomAssetSaveResponse | null> => {
-      if (!insightId) {
-        setError('Insight ID is required to save room screenshot');
-        return null;
-      }
-      if (!base64Png) {
-        setError('Screenshot content is required');
-        return null;
-      }
-
-      const normalizedName = fileName.endsWith('.png') ? fileName : `${fileName}.png`;
-      const relativePath = normalizedName;
-
-      setError(null);
-      try {
-        const pixel = `SaveInsightAssetsBase64(filePath=[${JSON.stringify(relativePath)}], content=[${JSON.stringify(base64Png)}]);`;
-        const res = await runPixel(pixel, insightId);
-        const errors = res.pixelReturn
-          ?.filter((item) => String(item.operationType || '').includes('ERROR'))
-          .map((item) => typeof item.output === 'string' ? item.output : JSON.stringify(item.output));
-        if (errors?.length) {
-          throw new Error(errors.join('\n'));
-        }
-
-        return {
-          saved: true,
-          fileName: normalizedName,
-          roomPath: `/${relativePath}`,
-          mimeType: 'image/png',
-        };
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : 'Failed to save screenshot to room';
-        setError(msg);
-        return null;
-      }
-    },
-    [],
-  );
-
   const listRecordingProjects = useCallback(async (insightId: string): Promise<RecordingProjectOption[]> => {
     if (!insightId) {
       setError('Insight ID is required to list recording projects');
@@ -401,7 +355,6 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
               isNewTab?: boolean;
               newTabId?: string;
               tabTitle?: string;
-              screenshot?: unknown;
             }
           | undefined;
 
@@ -417,7 +370,6 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
           isNewTab: output.isNewTab,
           newTabId: output.newTabId,
           tabTitle: output.tabTitle,
-          screenshot: output.screenshot,
         };
       } catch (e: unknown) {
         return { success: false, error: e instanceof Error ? e.message : 'Failed to replay step' };
@@ -453,7 +405,6 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     saveRecording,
     getRecordingEnvelope,
     saveRoomRecording,
-    saveRoomScreenshot,
     listRecordingProjects,
     listRecordingFiles,
     getRoomRecordingEnvelope,
