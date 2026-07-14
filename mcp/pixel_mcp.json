@@ -51,8 +51,7 @@
           "max_candidates": {
             "type": "integer",
             "title": "Maximum Candidates",
-            "description": "Maximum recording summaries to return. Defaults to 20 and cannot exceed 50.",
-            "default": 20
+            "description": "Maximum recording summaries to return. Defaults to 20 and cannot exceed 50."
           }
         },
         "required": []
