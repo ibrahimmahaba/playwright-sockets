@@ -142,19 +142,22 @@ export function getSemossInsightId(): string {
   return boundInsightId || insight.insightId;
 }
 
-export async function runAppMcpTool<T = unknown>(
-  name: string,
-  parameters: Record<string, unknown>,
+export async function resolvePlaywrightRoomRecording<T = unknown>(
+  roomId: string,
+  parameters: {
+    recordingNameHint?: string;
+    recordingFile?: string;
+    projectId?: string;
+  },
 ): Promise<T> {
-  const appId = Env.APP;
-  if (!appId) {
-    throw new Error("SEMOSS app id is required to run an app MCP tool");
-  }
-
   const { pixelReturn } = await runPixel<unknown>(
-    `RunMCPTool(project=[${JSON.stringify(appId)}], function=[${JSON.stringify(
-      name,
-    )}], paramValues=[${JSON.stringify(parameters)}]);`,
+    `ResolvePlaywrightRoomRecording(roomId=${JSON.stringify(
+      roomId,
+    )}, recording_name_hint=${JSON.stringify(
+      parameters.recordingNameHint || "",
+    )}, recording_file=${JSON.stringify(
+      parameters.recordingFile || "",
+    )}, project_id=${JSON.stringify(parameters.projectId || "")});`,
     getSemossInsightId(),
   );
 

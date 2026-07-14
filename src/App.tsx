@@ -55,7 +55,7 @@ import {
   bindSemossInsightToRoom,
   getSemossInsightId,
   initSemoss,
-  runAppMcpTool,
+  resolvePlaywrightRoomRecording,
   sendMcpResponseToPlayground,
   subscribeToMcpToolContext,
 } from "./semoss/client";
@@ -183,7 +183,9 @@ function isPlayRecordingTool(context: McpToolContext | null): boolean {
   const name = getToolFunctionName(context);
   return (
     name === "play_playwright_sockets_recording" ||
-    name.endsWith("_play_playwright_sockets_recording")
+    name.endsWith("_play_playwright_sockets_recording") ||
+    name === "PlayPlaywrightSocketsRoomRecording" ||
+    name.endsWith("_PlayPlaywrightSocketsRoomRecording")
   );
 }
 
@@ -620,13 +622,16 @@ export default function App() {
       }
       const roomInsightId = getSemossInsightId() || effectiveInsightId;
 
+      if (!toolContext?.roomId) {
+        throw new Error("Playground room ID is required to resolve a room recording");
+      }
       const resolved =
-        await runAppMcpTool<ResolvePlaywrightRecordingResponse>(
-          "resolve_playwright_recording",
+        await resolvePlaywrightRoomRecording<ResolvePlaywrightRecordingResponse>(
+          toolContext.roomId,
           {
-            recording_name_hint: mcpRecordingNameHint,
-            recording_file: mcpRecordingFile,
-            project_id: mcpPlaybackProjectId,
+            recordingNameHint: mcpRecordingNameHint,
+            recordingFile: mcpRecordingFile,
+            projectId: mcpPlaybackProjectId || playbackProject?.value || "",
           },
         );
 
