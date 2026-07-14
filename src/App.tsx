@@ -98,11 +98,84 @@ function sanitizeFilePart(value: string): string {
     .slice(0, 96);
 }
 
-function buildRecordingFileName(envelope: StepsEnvelope, hint = ""): string {
+function isMeaningfulRecordingUrl(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    !!value.trim() &&
+    value.trim() !== "about:blank"
+  );
+}
+
+function getRecordingStartUrl(
+  envelope: StepsEnvelope,
+  requestedStartUrl = "",
+): string {
   const steps = flattenEnvelopeSteps(envelope);
-  const firstUrl = steps.find((step) => typeof step.url === "string")?.url;
+  const firstUrl = steps.find((step) =>
+    isMeaningfulRecordingUrl(step.url),
+  )?.url;
+  return typeof firstUrl === "string"
+    ? firstUrl
+    : normalizeBrowserUrl(requestedStartUrl);
+}
+
+function ensureRequestedNavigation(
+  envelope: StepsEnvelope,
+  requestedStartUrl: string,
+): StepsEnvelope {
+  const normalizedUrl = normalizeBrowserUrl(requestedStartUrl);
+  if (!normalizedUrl || getRecordingStartUrl(envelope)) {
+    return envelope;
+  }
+
+  let replaced = false;
+  const steps = Object.fromEntries(
+    Object.entries(envelope.steps ?? {}).map(([tabId, tabSteps]) => {
+      const nextTabSteps = tabSteps.map((item) => {
+        if (Array.isArray(item)) {
+          return item.map((step) => {
+            if (!replaced && String(step.type || "").toUpperCase() === "NAVIGATE") {
+              replaced = true;
+              return { ...step, url: normalizedUrl };
+            }
+            return step;
+          });
+        }
+        if (!replaced && String(item.type || "").toUpperCase() === "NAVIGATE") {
+          replaced = true;
+          return { ...item, url: normalizedUrl };
+        }
+        return item;
+      });
+      return [tabId, nextTabSteps];
+    }),
+  );
+
+  if (!replaced) {
+    const tabId = Object.keys(steps)[0] || "tab-1";
+    const navigation = {
+      id: 1,
+      type: "NAVIGATE",
+      url: normalizedUrl,
+      waitAfterMs: 100,
+      shouldRun: true,
+      required: false,
+      timestamp: Date.now(),
+    };
+    steps[tabId] = [[navigation], ...(steps[tabId] || [])];
+  }
+
+  return { ...envelope, steps };
+}
+
+function buildRecordingFileName(
+  envelope: StepsEnvelope,
+  hint = "",
+  requestedStartUrl = "",
+): string {
+  const firstUrl = getRecordingStartUrl(envelope, requestedStartUrl);
   let host = "browser";
-  if (typeof firstUrl === "string" && firstUrl) {
+  if (firstUrl) {
     try {
       host =
         new URL(firstUrl).hostname.replace(/^www\./, "").split(".")[0] || host;
@@ -111,13 +184,8 @@ function buildRecordingFileName(envelope: StepsEnvelope, hint = ""): string {
     }
   }
 
-  const typedText = steps
-    .filter((step) => step.type === "TYPE" && typeof step.text === "string")
-    .map((step) => String(step.text))
-    .join(" ")
-    .slice(0, 48);
   const base =
-    sanitizeFilePart([hint, host, typedText].filter(Boolean).join(" ")) ||
+    sanitizeFilePart([hint, host].filter(Boolean).join(" ")) ||
     "playwright-recording";
   const stamp = new Date()
     .toISOString()
@@ -127,42 +195,61 @@ function buildRecordingFileName(envelope: StepsEnvelope, hint = ""): string {
   return `${base}-${stamp}.json`;
 }
 
-function buildRecordingTitle(envelope: StepsEnvelope, hint = ""): string {
-  const steps = flattenEnvelopeSteps(envelope);
-  const firstUrl = steps.find((step) => typeof step.url === "string")?.url;
-  const typedText = steps.find(
-    (step) => step.type === "TYPE" && typeof step.text === "string",
-  )?.text;
-  const parts = [hint, firstUrl, typedText].filter(
+function buildRecordingTitle(
+  envelope: StepsEnvelope,
+  hint = "",
+  requestedStartUrl = "",
+): string {
+  const firstUrl = getRecordingStartUrl(envelope, requestedStartUrl);
+  const parts = [hint, firstUrl].filter(
     (part) => typeof part === "string" && part.trim(),
   );
   return String(parts[0] || "Playwright browser recording").slice(0, 120);
+}
+
+function shouldReplaceRecordingTitle(value: string | undefined): boolean {
+  const normalized = (value || "").trim().toLowerCase();
+  return !normalized || normalized === "about:blank" || normalized === "browser";
 }
 
 function enrichEnvelopeForRoomSave(
   envelope: StepsEnvelope,
   sessionId: string,
   hint = "",
-  message = "",
+  requestedStartUrl = "",
 ): StepsEnvelope {
+  const enrichedEnvelope = ensureRequestedNavigation(envelope, requestedStartUrl);
+  const normalizedStartUrl = getRecordingStartUrl(
+    enrichedEnvelope,
+    requestedStartUrl,
+  );
+  const title = shouldReplaceRecordingTitle(enrichedEnvelope.meta?.title)
+    ? buildRecordingTitle(enrichedEnvelope, hint, normalizedStartUrl)
+    : enrichedEnvelope.meta?.title;
   const now = Date.now();
   return {
-    ...envelope,
-    version: envelope.version || "1.0",
+    ...enrichedEnvelope,
+    version: enrichedEnvelope.version || "1.0",
     meta: {
-      ...envelope.meta,
-      id: envelope.meta?.id || sessionId,
-      title: envelope.meta?.title || buildRecordingTitle(envelope, hint),
+      ...enrichedEnvelope.meta,
+      id: enrichedEnvelope.meta?.id || sessionId,
+      title,
       description:
-        envelope.meta?.description ||
-        "Recorded from Playwright Sockets via Playground.",
-      createdAt: envelope.meta?.createdAt || now,
+        enrichedEnvelope.meta?.description ||
+        `Recorded from Playwright Sockets via Playground${
+          normalizedStartUrl ? ` starting at ${normalizedStartUrl}` : ""
+        }.`,
+      createdAt: enrichedEnvelope.meta?.createdAt || now,
       updatedAt: now,
       intent:
-        envelope.meta?.intent ||
-        message ||
+        enrichedEnvelope.meta?.intent ||
         hint ||
-        buildRecordingTitle(envelope, hint),
+        buildRecordingTitle(enrichedEnvelope, hint, normalizedStartUrl),
+      requestedStartUrl: normalizedStartUrl,
+      searchTerms: Array.from(
+        new Set([hint, normalizedStartUrl, title].filter(Boolean) as string[]),
+      ),
+      source: "playwright-sockets-playground",
     },
   };
 }
@@ -1047,11 +1134,12 @@ export default function App() {
         envelope,
         session.sessionId,
         mcpRecordingNameHint,
-        toolContext.message,
+        mcpStartUrl,
       );
       const fileName = buildRecordingFileName(
         enrichedEnvelope,
         mcpRecordingNameHint,
+        mcpStartUrl,
       );
       const saved = await saveRoomRecording(
         roomBoundInsightId,
@@ -1069,6 +1157,9 @@ export default function App() {
           fileName: saved.fileName,
           sessionId: session.sessionId,
           roomId: toolContext.roomId,
+          startUrl: getRecordingStartUrl(enrichedEnvelope, mcpStartUrl),
+          title: enrichedEnvelope.meta?.title,
+          description: enrichedEnvelope.meta?.description,
         },
         "success",
         toolContext.parameters,
@@ -1104,6 +1195,7 @@ export default function App() {
     effectiveInsightId,
     isRecording,
     mcpRecordingNameHint,
+    mcpStartUrl,
     saveRoomRecording,
     sendEvent,
     session,

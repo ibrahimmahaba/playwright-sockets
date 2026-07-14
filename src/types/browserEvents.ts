@@ -65,6 +65,9 @@ export interface RecordingMeta {
   createdAt?: number;
   updatedAt?: number;
   intent?: string;
+  requestedStartUrl?: string;
+  searchTerms?: string[];
+  source?: string;
 }
 
 export interface RecordingProjectOption {

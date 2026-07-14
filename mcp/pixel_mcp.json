@@ -19,7 +19,7 @@
           "recording_name_hint": {
             "type": "string",
             "title": "Recording Name Hint",
-            "description": "Optional short name or description for the recording."
+            "description": "Provide a concise semantic name derived from the user's request, such as Google homepage or customer login flow. This is saved with the recording for later discovery."
           }
         },
         "required": [
@@ -36,9 +36,36 @@
       }
     },
     {
+      "name": "FindPlaywrightRoomRecordings",
+      "title": "Find Playwright Room Recordings",
+      "description": "Inspect Playwright recordings saved in the current Playground room and return compact summaries containing filenames, metadata, URLs, hosts, and recorded steps. Use this before replay when the user did not provide an exact recording filename. Compare the returned candidates, tell the user which recording appears closest, and ask for confirmation. After confirmation, call PlayPlaywrightSocketsRoomRecording with the exact recording_file.",
+      "inputSchema": {
+        "type": "object",
+        "title": "FindPlaywrightRoomRecordings_Arguments",
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Recording Description",
+            "description": "Natural-language description of the desired recording, such as google.com or checkout login flow. Leave empty to list room recordings."
+          },
+          "max_candidates": {
+            "type": "integer",
+            "title": "Maximum Candidates",
+            "description": "Maximum recording summaries to return. Defaults to 20 and cannot exceed 50.",
+            "default": 20
+          }
+        },
+        "required": []
+      },
+      "_meta": {
+        "SMSS_MCP_EXECUTION": "auto",
+        "SMSS_FUNCTION_NAME": "FindPlaywrightRoomRecordings"
+      }
+    },
+    {
       "name": "PlayPlaywrightSocketsRoomRecording",
       "title": "Play Playwright Sockets Room Recording",
-      "description": "Open Playwright Sockets and replay the current Playground room recording that best matches a natural-language description or filename. If the user did not identify a recording, ask which room recording to play before calling this tool.",
+      "description": "Open Playwright Sockets and replay a confirmed recording from the current Playground room. Prefer an exact recording_file selected from FindPlaywrightRoomRecordings. If only a natural-language description is available, call FindPlaywrightRoomRecordings first, explain the closest candidates, and ask the user to confirm before opening this tool.",
       "inputSchema": {
         "type": "object",
         "title": "PlayPlaywrightSocketsRoomRecording_Arguments",
@@ -64,9 +91,7 @@
             "description": "Optional URL override to open before replaying the recording."
           }
         },
-        "required": [
-          "recording_name_hint"
-        ]
+        "required": []
       },
       "_meta": {
         "SMSS_MCP_EXECUTION": "ask",
