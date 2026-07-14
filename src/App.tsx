@@ -44,6 +44,7 @@ import { ConnectionStatus } from "./components/ConnectionStatus";
 import { useRemoteBrowserSession } from "./hooks/useRemoteBrowserSession";
 import { useBrowserSocket } from "./hooks/useBrowserSocket";
 import type {
+	BrowserSelector,
   ClientToServerEvent,
   LoadedRecording,
   LoadedRecordingStep,
@@ -296,6 +297,28 @@ function getStepCoords(step: LoadedRecordingStep): { x: number; y: number } | nu
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 }
 
+function getStepSelector(step: LoadedRecordingStep): BrowserSelector | undefined {
+  const raw = step.selector;
+  if (!raw || typeof raw !== "object") return undefined;
+  const selector = raw as Record<string, unknown>;
+  if (typeof selector.strategy !== "string" || typeof selector.value !== "string") {
+    return undefined;
+  }
+  return {
+    strategy: selector.strategy,
+    value: selector.value,
+    frameSelector:
+      typeof selector.frameSelector === "string" ? selector.frameSelector : null,
+  };
+}
+
+function getReplayWaitAfterMs(step: LoadedRecordingStep, fallback: number): number {
+  const waitAfterMs = Number(step.waitAfterMs);
+  return Number.isFinite(waitAfterMs) && waitAfterMs >= 0
+    ? waitAfterMs
+    : fallback;
+}
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -488,7 +511,7 @@ export default function App() {
     setSnackError(msg);
   }, []);
 
-  const { connectionState, sendEvent } = useBrowserSocket({
+  const { connectionState, sendEvent, sendReplayEvent } = useBrowserSocket({
     wsUrl: session?.webSocketUrl ?? null,
     onFrame: handleFrame,
     onNavigated: handleNavigated,
@@ -910,85 +933,105 @@ export default function App() {
 
   const replayRoomStepViaSocket = useCallback(
     async (step: LoadedRecordingStep): Promise<boolean> => {
-      const type = String(step.type || "").toUpperCase();
-      const coords = getStepCoords(step);
+			const type = String(step.type || "").toUpperCase();
+			const coords = getStepCoords(step);
+			const selector = getStepSelector(step);
+			const replay = (event: ClientToServerEvent) =>
+				sendReplayEvent({ ...event, requestId: crypto.randomUUID() });
 
-      switch (type) {
-        case "NAVIGATE": {
-          const url =
-            typeof step.url === "string" ? normalizeBrowserUrl(step.url) : "";
-          if (!url) {
-            setSnackError(`Step ${step.id ?? ""} is missing a URL`);
-            return false;
-          }
-          sendEvent({ type: "navigate", url, record: false });
-          await wait(Number(step.waitAfterMs) || 1200);
-          return true;
-        }
-        case "CLICK": {
-          if (!coords) {
-            setSnackError(`Step ${step.id ?? ""} is missing click coordinates`);
-            return false;
-          }
-          sendEvent({ type: "mouse-click", x: coords.x, y: coords.y, button: "left", record: false });
-          await wait(Number(step.waitAfterMs) || 400);
-          return true;
-        }
-        case "TYPE": {
-          const text =
-            typeof step.id === "number"
-              ? editedTypeValues[step.id] ?? String(step.text || "")
-              : String(step.text || "");
-          if (coords) {
-            sendEvent({ type: "mouse-click", x: coords.x, y: coords.y, button: "left", record: false });
-            await wait(150);
-          }
-          sendEvent({ type: "type-text", text, record: false });
-          if (step.pressEnter === true) {
-            await wait(100);
-            sendEvent({ type: "key", key: "Enter", code: "Enter", record: false });
-          }
-          await wait(Number(step.waitAfterMs) || 400);
-          return true;
-        }
-        case "SCROLL": {
-          const x = coords?.x ?? 0;
-          const y = coords?.y ?? 0;
-          const deltaY = Number(step.deltaY);
-          sendEvent({
-            type: "wheel",
-            x,
-            y,
-            deltaX: 0,
-            deltaY: Number.isFinite(deltaY) ? deltaY : 600,
-            record: false,
-          });
-          await wait(Number(step.waitAfterMs) || 300);
-          return true;
-        }
-        case "HOVER": {
-          if (!coords) {
-            setSnackError(`Step ${step.id ?? ""} is missing hover coordinates`);
-            return false;
-          }
-          sendEvent({ type: "mouse-move", x: coords.x, y: coords.y, record: false });
-          await wait(Number(step.waitAfterMs) || 250);
-          return true;
-        }
-        case "WAIT": {
-          await wait(Number(step.waitAfterMs) || 1000);
-          return true;
-        }
-        case "CONTEXT": {
-          await wait(Number(step.waitAfterMs) || 100);
-          return true;
-        }
-        default:
-          setSnackError(`Unsupported room playback step type: ${type || "unknown"}`);
-          return false;
-      }
+			try {
+				switch (type) {
+					case "NAVIGATE": {
+						const url =
+							typeof step.url === "string" ? normalizeBrowserUrl(step.url) : "";
+						if (!url) throw new Error(`Step ${step.id ?? ""} is missing a URL`);
+						await replay({
+							type: "navigate",
+							url,
+							record: false,
+							waitAfterMs: getReplayWaitAfterMs(step, 1200),
+						});
+						return true;
+					}
+					case "CLICK": {
+						if (!coords && !selector) {
+							throw new Error(`Step ${step.id ?? ""} is missing a click target`);
+						}
+						await replay({
+							type: "mouse-click",
+							x: coords?.x ?? 0,
+							y: coords?.y ?? 0,
+							button: "left",
+							record: false,
+							selector,
+							waitAfterMs: getReplayWaitAfterMs(step, 400),
+						});
+						return true;
+					}
+					case "TYPE": {
+						const text =
+							typeof step.id === "number"
+								? editedTypeValues[step.id] ?? String(step.text || "")
+								: String(step.text || "");
+						await replay({
+							type: "type-text",
+							text,
+							record: false,
+							selector,
+							x: coords?.x,
+							y: coords?.y,
+							waitAfterMs:
+								step.pressEnter === true ? 0 : getReplayWaitAfterMs(step, 400),
+						});
+						if (step.pressEnter === true) {
+							await replay({
+								type: "key",
+								key: "Enter",
+								code: "Enter",
+								record: false,
+								waitAfterMs: getReplayWaitAfterMs(step, 400),
+							});
+						}
+						return true;
+					}
+					case "SCROLL": {
+						const deltaY = Number(step.deltaY);
+						await replay({
+							type: "wheel",
+							x: coords?.x ?? 0,
+							y: coords?.y ?? 0,
+							deltaX: 0,
+							deltaY: Number.isFinite(deltaY) ? deltaY : 600,
+							record: false,
+							waitAfterMs: getReplayWaitAfterMs(step, 300),
+						});
+						return true;
+					}
+					case "HOVER": {
+						if (!coords) throw new Error(`Step ${step.id ?? ""} is missing hover coordinates`);
+						await replay({
+							type: "mouse-move",
+							x: coords.x,
+							y: coords.y,
+							record: false,
+							waitAfterMs: getReplayWaitAfterMs(step, 250),
+						});
+						return true;
+					}
+					case "WAIT":
+						await wait(getReplayWaitAfterMs(step, 1000));
+						return true;
+					case "CONTEXT":
+						return true;
+					default:
+						throw new Error(`Unsupported room playback step type: ${type || "unknown"}`);
+				}
+			} catch (error) {
+				setSnackError(error instanceof Error ? error.message : "Replay step failed");
+				return false;
+			}
     },
-    [editedTypeValues, sendEvent],
+		[editedTypeValues, sendReplayEvent],
   );
 
   const handleStop = useCallback(async () => {
@@ -1412,7 +1455,8 @@ export default function App() {
       autoPlaybackRunStartedRef.current ||
       !loadedRecording ||
       !selectedRecording ||
-      !session
+      !session ||
+      connectionState !== "connected"
     ) {
       return;
     }
@@ -1459,6 +1503,7 @@ export default function App() {
     })();
   }, [
     effectiveInsightId,
+		connectionState,
     handleRunLoadedRecording,
     isMcpPlaybackMode,
     loadedRecording,

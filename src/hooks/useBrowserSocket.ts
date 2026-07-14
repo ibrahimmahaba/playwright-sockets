@@ -15,6 +15,13 @@ interface UseBrowserSocketOptions {
 interface UseBrowserSocketReturn {
   connectionState: ConnectionState;
   sendEvent: (event: ClientToServerEvent) => void;
+	 sendReplayEvent: (event: ClientToServerEvent & { requestId: string }) => Promise<void>;
+}
+
+interface PendingReplay {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
 }
 
 const MODULE_PATH = process.env.MODULE || "/Monolith";
@@ -33,6 +40,7 @@ export function useBrowserSocket({
     useState<ConnectionState>("idle");
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	 const pendingReplayRef = useRef<Map<string, PendingReplay>>(new Map());
 
   // Build the full WS URL from the relative path returned by the REST API
   const buildFullWsUrl = useCallback((path: string): string => {
@@ -72,6 +80,18 @@ export function useBrowserSocket({
           case "navigated":
             onNavigated(msg.url);
             break;
+				case "replay-step-result": {
+					const pending = pendingReplayRef.current.get(msg.requestId);
+					if (!pending) break;
+					window.clearTimeout(pending.timeout);
+					pendingReplayRef.current.delete(msg.requestId);
+					if (msg.success) {
+						pending.resolve();
+					} else {
+						pending.reject(new Error(msg.error || "Replay step failed"));
+					}
+					break;
+				}
           case "error":
             onError(msg.message);
             break;
@@ -84,6 +104,11 @@ export function useBrowserSocket({
     ws.onclose = () => {
       setConnectionState("closed");
       wsRef.current = null;
+			pendingReplayRef.current.forEach((pending) => {
+				window.clearTimeout(pending.timeout);
+				pending.reject(new Error("Browser connection closed during replay"));
+			});
+			pendingReplayRef.current.clear();
     };
 
     ws.onerror = () => {
@@ -103,5 +128,23 @@ export function useBrowserSocket({
     }
   }, []);
 
-  return { connectionState, sendEvent };
+	 const sendReplayEvent = useCallback(
+		(event: ClientToServerEvent & { requestId: string }): Promise<void> => {
+			const ws = wsRef.current;
+			if (!ws || ws.readyState !== WebSocket.OPEN) {
+				return Promise.reject(new Error("Browser connection is not ready for replay"));
+			}
+			return new Promise<void>((resolve, reject) => {
+				const timeout = window.setTimeout(() => {
+					pendingReplayRef.current.delete(event.requestId);
+					reject(new Error("Timed out waiting for replay step completion"));
+				}, 30_000);
+				pendingReplayRef.current.set(event.requestId, { resolve, reject, timeout });
+				ws.send(JSON.stringify(event));
+			});
+		},
+		[],
+	);
+
+  return { connectionState, sendEvent, sendReplayEvent };
 }

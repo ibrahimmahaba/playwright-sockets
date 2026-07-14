@@ -1,23 +1,37 @@
 // ─── Events sent from React → Java backend ───────────────────────────────────
 
+export interface BrowserSelector {
+  strategy: string;
+  value: string;
+  frameSelector?: string | null;
+}
+
+type ReplayMetadata = {
+  requestId?: string;
+  waitAfterMs?: number;
+  selector?: BrowserSelector;
+  recordedViewportWidth?: number;
+  recordedViewportHeight?: number;
+};
+
 export type ClientToServerEvent =
-  | { type: 'mouse-click'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean }
-  | { type: 'mouse-move'; x: number; y: number; record?: boolean }
-  | { type: 'mouse-down'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean }
-  | { type: 'mouse-up'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean }
-  | { type: 'wheel'; x: number; y: number; deltaX: number; deltaY: number; record?: boolean }
-  | { type: 'type-text'; text: string; record?: boolean }
+  | ({ type: 'mouse-click'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean } & ReplayMetadata)
+  | ({ type: 'mouse-move'; x: number; y: number; record?: boolean } & ReplayMetadata)
+  | ({ type: 'mouse-down'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean } & ReplayMetadata)
+  | ({ type: 'mouse-up'; x: number; y: number; button: 'left' | 'right' | 'middle'; record?: boolean } & ReplayMetadata)
+  | ({ type: 'wheel'; x: number; y: number; deltaX: number; deltaY: number; record?: boolean } & ReplayMetadata)
+  | ({ type: 'type-text'; text: string; x?: number; y?: number; record?: boolean } & ReplayMetadata)
   | {
       type: 'key';
       key: string;
       code?: string;
       modifiers?: { alt?: boolean; ctrl?: boolean; meta?: boolean; shift?: boolean };
       record?: boolean;
-    }
-  | { type: 'navigate'; url: string; record?: boolean }
-  | { type: 'navigate-back'; record?: boolean }
-  | { type: 'navigate-forward'; record?: boolean }
-  | { type: 'reload'; record?: boolean }
+    } & ReplayMetadata)
+  | ({ type: 'navigate'; url: string; record?: boolean } & ReplayMetadata)
+  | ({ type: 'navigate-back'; record?: boolean } & ReplayMetadata)
+  | ({ type: 'navigate-forward'; record?: boolean } & ReplayMetadata)
+  | ({ type: 'reload'; record?: boolean } & ReplayMetadata)
   | { type: 'recording-control'; recording: boolean; discard?: boolean }
   | { type: 'recording'; recording: boolean; discard?: boolean }
   | { type: 'close-session' };
@@ -32,6 +46,7 @@ export type ServerToClientEvent =
     }
   | { type: 'loading'; isLoading: boolean }
   | { type: 'navigated'; url: string }
+  | { type: 'replay-step-result'; requestId: string; success: boolean; url?: string; error?: string }
   | { type: 'error'; message: string };
 
 // ─── Session info returned by the REST API ───────────────────────────────────
