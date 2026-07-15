@@ -370,6 +370,12 @@ export default function App() {
     value: string;
   } | null>(null);
   const [recordingFiles, setRecordingFiles] = useState<string[]>([]);
+  const [recordingFilesRefreshToken, setRecordingFilesRefreshToken] =
+    useState(0);
+  const [optimisticRecordingFile, setOptimisticRecordingFile] = useState<{
+    projectId: string;
+    fileName: string;
+  } | null>(null);
   const [selectedRecording, setSelectedRecording] = useState<string | null>(
     null,
   );
@@ -699,7 +705,6 @@ export default function App() {
       return;
     }
     setLoadedRecording(null);
-    setSelectedRecording(null);
     if (!effectiveInsightId || !playbackProject?.value) {
       setRecordingFiles([]);
       return;
@@ -709,9 +714,24 @@ export default function App() {
     listRecordingFiles(effectiveInsightId, playbackProject.value)
       .then((files) => {
         if (cancelled) return;
-        setRecordingFiles(files);
+        const savedFile =
+          optimisticRecordingFile?.projectId === playbackProject.value
+            ? optimisticRecordingFile.fileName
+            : null;
+        const visibleFiles =
+          savedFile && !files.includes(savedFile)
+            ? [savedFile, ...files]
+            : files;
+        setRecordingFiles(visibleFiles);
+        if (savedFile && files.includes(savedFile)) {
+          setOptimisticRecordingFile(null);
+        }
         if (!isMcpPlaybackMode) {
-          setSelectedRecording(files[0] ?? null);
+          setSelectedRecording((current) =>
+            current && visibleFiles.includes(current)
+              ? current
+              : visibleFiles[0] ?? null,
+          );
         }
       })
       .finally(() => {
@@ -727,6 +747,8 @@ export default function App() {
     listRecordingFiles,
     playbackProject,
     playbackRecordingSource,
+    recordingFilesRefreshToken,
+    optimisticRecordingFile,
   ]);
 
   useEffect(() => {
@@ -1131,6 +1153,19 @@ export default function App() {
     });
 
     if (saved) {
+      setPlaybackRecordingSource("project");
+      setPlaybackProject(saveProject);
+      setOptimisticRecordingFile({
+        projectId: saveProject.value,
+        fileName: saved.fileName,
+      });
+      setRecordingFiles((files) => [
+        saved.fileName,
+        ...files.filter((file) => file !== saved.fileName),
+      ]);
+      setSelectedRecording(saved.fileName);
+      setLoadedRecording(null);
+      setRecordingFilesRefreshToken((token) => token + 1);
       setSaveDialogOpen(false);
       if (saveAfterStop) {
         sendEvent({
