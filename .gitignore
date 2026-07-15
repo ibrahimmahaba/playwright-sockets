@@ -30,3 +30,7 @@ pnpm-debug.log*
 # Lock files (keep package-lock.json, ignore others)
 pnpm-lock.yaml
 yarn.lock
+
+# Generated SEMOSS portal bundles
+portals/
+portals*.zip
