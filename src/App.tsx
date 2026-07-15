@@ -1596,7 +1596,7 @@ export default function App() {
     >
       {/* Toolbar row */}
       <Box
-        className="flex min-h-14 items-center gap-2 border-b border-line bg-surface px-3 py-2 shadow-lg shadow-black/20"
+        className="flex min-h-14 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-2 shadow-lg shadow-black/20"
       >
         <BrowserToolbar
           currentUrl={currentUrl}
@@ -1615,9 +1615,9 @@ export default function App() {
           onToggleRecording={handleToggleRecording}
           onOpenSaveRecording={handleOpenSaveRecording}
         />
-        <ConnectionStatus state={connectionState} />
-        <Box className="flex-1" />
-        {isPlaygroundMode && session && (
+        <Box className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+          <ConnectionStatus state={connectionState} />
+          {isPlaygroundMode && session && (
           <Button
             size="small"
             variant="contained"
@@ -1637,8 +1637,8 @@ export default function App() {
               ? "Returning"
               : "Return to Playground"}
           </Button>
-        )}
-        <Button
+          )}
+          <Button
           size="small"
           variant={
             playbackControlsOpen || loadedRecordingOpen
@@ -1659,8 +1659,8 @@ export default function App() {
           sx={{ whiteSpace: "nowrap", minWidth: 0, px: 1 }}
         >
           Replay
-        </Button>
-        <Button
+          </Button>
+          <Button
           size="small"
           variant={recordedStepsOpen ? "contained" : "outlined"}
           startIcon={
@@ -1671,13 +1671,14 @@ export default function App() {
           sx={{ whiteSpace: "nowrap", minWidth: 0, px: 1 }}
         >
           Recorded {recordedSteps.length ? `(${recordedSteps.length})` : ""}
-        </Button>
-        {isPlaybackPaused && (
-          <span className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs font-semibold text-warning">Paused</span>
-        )}
-        {isRunningRecording && (
-          <span className="rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">Step {runningStepId ?? ""}</span>
-        )}
+          </Button>
+          {isPlaybackPaused && (
+            <span className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs font-semibold text-warning">Paused</span>
+          )}
+          {isRunningRecording && (
+            <span className="rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">Step {runningStepId ?? ""}</span>
+          )}
+        </Box>
       </Box>
 
       {/* Session creation error banner */}

@@ -63,14 +63,14 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
   }, [currentUrl]);
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1.5">
-      <div className="flex items-center gap-0.5 rounded-md border border-line bg-surface-raised/70 p-0.5">
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 lg:w-auto lg:flex-1 lg:flex-nowrap">
+      <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-line bg-surface-raised/70 p-0.5">
         <Tooltip title="Back"><span><button className={iconButtonClass} disabled={!isActive || isLoading} onClick={onBack}><ArrowBackIcon fontSize="small" /></button></span></Tooltip>
         <Tooltip title="Forward"><span><button className={iconButtonClass} disabled={!isActive || isLoading} onClick={onForward}><ArrowForwardIcon fontSize="small" /></button></span></Tooltip>
         <Tooltip title="Reload"><span><button className={iconButtonClass} disabled={!isActive || isLoading} onClick={onReload}><RefreshIcon fontSize="small" /></button></span></Tooltip>
       </div>
 
-      <div className="flex h-9 min-w-[220px] flex-1 items-center rounded-md border border-line bg-canvas px-2 shadow-inner shadow-black/20 focus-within:border-accent/70 focus-within:ring-2 focus-within:ring-accent/15">
+      <div className="flex h-9 min-w-[10rem] flex-[1_1_16rem] items-center rounded-md border border-line bg-canvas px-2 shadow-inner shadow-black/20 focus-within:border-accent/70 focus-within:ring-2 focus-within:ring-accent/15">
         <input
           value={urlInput}
           onChange={(event) => setUrlInput(event.target.value)}
@@ -88,12 +88,16 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
         </Tooltip>
       </div>
 
-      {isActive && <Tooltip title="Stop viewer"><button className={`${iconButtonClass} border border-danger/30 text-danger hover:bg-danger/10 hover:text-danger`} onClick={onStop}><StopIcon fontSize="small" /></button></Tooltip>}
-      {isLoading && <CircularProgress size={16} thickness={4} color="inherit" className="text-accent" aria-label="Browser action in progress" />}
+      <div className="flex shrink-0 items-center gap-1">
+        {isActive && <Tooltip title="Stop viewer"><button className={`${iconButtonClass} border border-danger/30 text-danger hover:bg-danger/10 hover:text-danger`} onClick={onStop}><StopIcon fontSize="small" /></button></Tooltip>}
+        <span className="grid h-8 w-8 place-items-center" aria-live="polite">
+          {isLoading && <CircularProgress size={18} thickness={4} color="inherit" className="text-accent" aria-label="Browser action in progress" />}
+        </span>
+      </div>
 
-      <div className="mx-1 h-6 w-px bg-line" />
-      <Tooltip title={isRecording ? 'Stop recording future interactions' : 'Start recording future interactions'}>
-        <span>
+      <div className="flex shrink-0 items-center gap-1.5 border-l border-line pl-2">
+        <Tooltip title={isRecording ? 'Stop recording future interactions' : 'Start recording future interactions'}>
+          <span>
           <button
             className={`relative flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-bold tracking-wide transition-all ${isRecording ? 'border-danger bg-danger text-white shadow-[0_0_18px_rgba(240,82,103,0.34)]' : 'border-line bg-surface-raised text-muted hover:border-danger/50 hover:text-ink'} disabled:cursor-not-allowed disabled:opacity-40`}
             disabled={connectionState !== 'connected'}
@@ -101,20 +105,21 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
           >
             {isRecording && <span className="absolute -left-1 -top-1 h-3 w-3 animate-ping rounded-full bg-danger/80" />}
             <span className={`grid h-5 w-5 place-items-center rounded-full ${isRecording ? 'bg-white/20' : 'bg-danger/15 text-danger'}`}><FiberManualRecordIcon sx={{ fontSize: 15 }} /></span>
-            <span>{isRecording ? 'RECORDING' : 'Record'}</span>
+            <span className="hidden sm:inline">{isRecording ? 'RECORDING' : 'Record'}</span>
             {isRecording && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />}
           </button>
-        </span>
-      </Tooltip>
+          </span>
+        </Tooltip>
 
-      <Tooltip title="Save recording to project recordings folder">
-        <span>
-          <button className="flex h-9 items-center gap-2 rounded-md border border-line bg-surface-raised px-3 text-xs font-semibold text-ink transition-colors hover:border-accent/50 hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40" disabled={!canSaveRecording || isSaving} onClick={onOpenSaveRecording}>
-            {isSaving ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent" /> : <SaveIcon sx={{ fontSize: 16 }} />}
-            Save
-          </button>
-        </span>
-      </Tooltip>
+        <Tooltip title="Save recording to project recordings folder">
+          <span>
+            <button className="flex h-9 items-center gap-2 rounded-md border border-line bg-surface-raised px-2.5 text-xs font-semibold text-ink transition-colors hover:border-accent/50 hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40" disabled={!canSaveRecording || isSaving} onClick={onOpenSaveRecording}>
+              {isSaving ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent" /> : <SaveIcon sx={{ fontSize: 16 }} />}
+              <span className="hidden sm:inline">Save</span>
+            </button>
+          </span>
+        </Tooltip>
+      </div>
     </div>
   );
 };
