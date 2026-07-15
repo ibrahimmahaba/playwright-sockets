@@ -399,7 +399,7 @@ export default function App() {
   const [isLoadingRecordingFiles, setIsLoadingRecordingFiles] = useState(false);
   const [isLoadingRecording, setIsLoadingRecording] = useState(false);
   const [isRunningRecording, setIsRunningRecording] = useState(false);
-  const [isBrowserActionLoading, setIsBrowserActionLoading] = useState(false);
+  const [pendingBrowserActionCount, setPendingBrowserActionCount] = useState(0);
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
   const [playbackControlsOpen, setPlaybackControlsOpen] = useState(true);
   const [loadedRecordingOpen, setLoadedRecordingOpen] = useState(false);
@@ -527,7 +527,7 @@ export default function App() {
 
   const runBrowserAction = useCallback(
     async (event: ClientToServerEvent) => {
-      setIsBrowserActionLoading(true);
+      setPendingBrowserActionCount((count) => count + 1);
       try {
         await sendReplayEvent({ ...event, requestId: crypto.randomUUID() });
       } catch (error) {
@@ -535,10 +535,23 @@ export default function App() {
           error instanceof Error ? error.message : "Browser action failed",
         );
       } finally {
-        setIsBrowserActionLoading(false);
+        setPendingBrowserActionCount((count) => Math.max(0, count - 1));
       }
     },
     [sendReplayEvent],
+  );
+
+  const sendViewerEvent = useCallback(
+    (event: ClientToServerEvent) => {
+      // Pointer movement is intentionally fire-and-forget so the toolbar does
+      // not show activity while the user is only moving the cursor.
+      if (event.type === "mouse-move") {
+        sendEvent(event);
+        return;
+      }
+      void runBrowserAction(event);
+    },
+    [runBrowserAction, sendEvent],
   );
 
   const defaultRecordingName = useMemo(() => {
@@ -1574,7 +1587,7 @@ export default function App() {
   const remoteWidth = session?.viewport.width ?? 1365;
   const remoteHeight = session?.viewport.height ?? 768;
   const isBrowserLoading =
-    isCreating || isBrowserActionLoading || runningStepId !== null;
+    isCreating || pendingBrowserActionCount > 0 || runningStepId !== null;
 
   return (
     <Box
@@ -1721,7 +1734,7 @@ export default function App() {
           remoteWidth={remoteWidth}
           remoteHeight={remoteHeight}
           latestFrame={latestFrame}
-          sendEvent={sendEvent as (e: ClientToServerEvent) => void}
+          sendEvent={sendViewerEvent}
           onUserInput={() =>
             requestPlaybackPause("Playback will pause after your interaction")
           }
