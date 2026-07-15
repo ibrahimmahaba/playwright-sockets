@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import CircularProgress from '@mui/material/CircularProgress';
 import Tooltip from '@mui/material/Tooltip';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
@@ -88,7 +89,7 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
       </div>
 
       {isActive && <Tooltip title="Stop viewer"><button className={`${iconButtonClass} border border-danger/30 text-danger hover:bg-danger/10 hover:text-danger`} onClick={onStop}><StopIcon fontSize="small" /></button></Tooltip>}
-      {isLoading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-label="Browser action in progress" />}
+      {isLoading && <CircularProgress size={16} thickness={4} color="inherit" className="text-accent" aria-label="Browser action in progress" />}
 
       <div className="mx-1 h-6 w-px bg-line" />
       <Tooltip title={isRecording ? 'Stop recording future interactions' : 'Start recording future interactions'}>
