@@ -1,0 +1,182 @@
+{
+  "version" : "1.0",
+  "meta" : {
+    "id" : "6b403e0d-3063-4350-8de5-42f756f472b4",
+    "title" : "w3schools-java",
+    "description" : "",
+    "createdAt" : 1784117954779,
+    "updatedAt" : 1784117954779,
+    "intent" : ""
+  },
+  "steps" : {
+    "tab-1" : [ [ {
+      "id" : 1,
+      "type" : "NAVIGATE",
+      "url" : "https://www.w3schools.com/howto/howto_css_icon_bar.asp",
+      "coords" : null,
+      "multiCoords" : null,
+      "prompt" : null,
+      "text" : null,
+      "pressEnter" : null,
+      "deltaY" : null,
+      "waitUntil" : null,
+      "waitAfterMs" : 100,
+      "viewport" : {
+        "width" : 1365,
+        "height" : 768,
+        "deviceScaleFactor" : 1.0
+      },
+      "timestamp" : 1784117924187,
+      "label" : null,
+      "description" : null,
+      "isPassword" : false,
+      "storeValue" : false,
+      "selector" : null,
+      "isTriggerNewTab" : null,
+      "shouldRun" : true,
+      "required" : false,
+      "sendToPlayground" : null,
+      "tag" : null
+    } ], [ {
+      "id" : 2,
+      "type" : "CLICK",
+      "url" : null,
+      "coords" : {
+        "x" : 1177,
+        "y" : 35
+      },
+      "multiCoords" : null,
+      "prompt" : null,
+      "text" : null,
+      "pressEnter" : null,
+      "deltaY" : null,
+      "waitUntil" : null,
+      "waitAfterMs" : 300,
+      "viewport" : {
+        "width" : 1365,
+        "height" : 768,
+        "deviceScaleFactor" : 1.0
+      },
+      "timestamp" : 1784117925895,
+      "label" : "W3Schools Certificates",
+      "description" : null,
+      "isPassword" : false,
+      "storeValue" : false,
+      "selector" : {
+        "strategy" : "css",
+        "value" : "html>body:nth-of-type(1)>div:nth-of-type(2)>div:nth-of-type(1)>div:nth-of-type(3)>a:nth-of-type(2)",
+        "frameSelector" : null
+      },
+      "isTriggerNewTab" : null,
+      "shouldRun" : true,
+      "required" : false,
+      "sendToPlayground" : null,
+      "tag" : "a"
+    }, {
+      "id" : 3,
+      "type" : "CLICK",
+      "url" : null,
+      "coords" : {
+        "x" : 424,
+        "y" : 77
+      },
+      "multiCoords" : null,
+      "prompt" : null,
+      "text" : null,
+      "pressEnter" : null,
+      "deltaY" : null,
+      "waitUntil" : null,
+      "waitAfterMs" : 300,
+      "viewport" : {
+        "width" : 1365,
+        "height" : 768,
+        "deviceScaleFactor" : 1.0
+      },
+      "timestamp" : 1784117934791,
+      "label" : null,
+      "description" : null,
+      "isPassword" : false,
+      "storeValue" : false,
+      "selector" : {
+        "strategy" : "css",
+        "value" : "html>body:nth-of-type(1)>div:nth-of-type(4)>div:nth-of-type(1)>a:nth-of-type(6)",
+        "frameSelector" : null
+      },
+      "isTriggerNewTab" : null,
+      "shouldRun" : true,
+      "required" : false,
+      "sendToPlayground" : null,
+      "tag" : "a"
+    }, {
+      "id" : 4,
+      "type" : "CLICK",
+      "url" : null,
+      "coords" : {
+        "x" : 152,
+        "y" : 193
+      },
+      "multiCoords" : null,
+      "prompt" : null,
+      "text" : null,
+      "pressEnter" : null,
+      "deltaY" : null,
+      "waitUntil" : null,
+      "waitAfterMs" : 300,
+      "viewport" : {
+        "width" : 1365,
+        "height" : 768,
+        "deviceScaleFactor" : 1.0
+      },
+      "timestamp" : 1784117938200,
+      "label" : null,
+      "description" : null,
+      "isPassword" : false,
+      "storeValue" : false,
+      "selector" : {
+        "strategy" : "css",
+        "value" : "html>body:nth-of-type(1)>div:nth-of-type(5)>div:nth-of-type(1)>div:nth-of-type(1)>div:nth-of-type(1)>div:nth-of-type(1)>a:nth-of-type(3)",
+        "frameSelector" : null
+      },
+      "isTriggerNewTab" : null,
+      "shouldRun" : true,
+      "required" : false,
+      "sendToPlayground" : null,
+      "tag" : "a"
+    }, {
+      "id" : 5,
+      "type" : "CLICK",
+      "url" : null,
+      "coords" : {
+        "x" : 1077,
+        "y" : 470
+      },
+      "multiCoords" : null,
+      "prompt" : null,
+      "text" : null,
+      "pressEnter" : null,
+      "deltaY" : null,
+      "waitUntil" : null,
+      "waitAfterMs" : 300,
+      "viewport" : {
+        "width" : 1365,
+        "height" : 768,
+        "deviceScaleFactor" : 1.0
+      },
+      "timestamp" : 1784117940401,
+      "label" : null,
+      "description" : null,
+      "isPassword" : false,
+      "storeValue" : false,
+      "selector" : {
+        "strategy" : "css",
+        "value" : "html>body:nth-of-type(1)>div:nth-of-type(5)>div:nth-of-type(1)>div:nth-of-type(2)>div:nth-of-type(1)>div:nth-of-type(1)>div:nth-of-type(2)>a:nth-of-type(2)",
+        "frameSelector" : null
+      },
+      "isTriggerNewTab" : null,
+      "shouldRun" : true,
+      "required" : false,
+      "sendToPlayground" : null,
+      "tag" : "a"
+    } ] ]
+  }
+}
