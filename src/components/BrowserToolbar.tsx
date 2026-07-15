@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
-import {
-  Box,
-  TextField,
-  IconButton,
-  Tooltip,
-  CircularProgress,
-  Button,
-} from '@mui/material';
+import Tooltip from '@mui/material/Tooltip';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
@@ -21,6 +14,7 @@ interface BrowserToolbarProps {
   currentUrl: string;
   connectionState: ConnectionState;
   isCreating: boolean;
+  isLoading: boolean;
   onStart: (url: string) => void;
   onStop: () => void;
   onNavigate: (url: string) => void;
@@ -34,10 +28,13 @@ interface BrowserToolbarProps {
   onOpenSaveRecording: () => void;
 }
 
+const iconButtonClass = 'grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-surface-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40';
+
 export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
   currentUrl,
   connectionState,
   isCreating,
+  isLoading,
   onStart,
   onStop,
   onNavigate,
@@ -53,145 +50,70 @@ export const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
   const [urlInput, setUrlInput] = useState('https://github.com');
   const isActive = connectionState === 'connected' || connectionState === 'connecting';
 
-  const handleStart = () => {
+  const submit = () => {
     const target = urlInput.trim();
     if (!target) return;
-    onStart(target);
+    if (isActive) onNavigate(target);
+    else onStart(target);
   };
 
-  const handleNavigate = () => {
-    const target = urlInput.trim();
-    if (!target) return;
-    onNavigate(target);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      if (!isActive) handleStart();
-      else handleNavigate();
-    }
-  };
-
-  // Sync URL bar when the browser navigates
   React.useEffect(() => {
     if (currentUrl) setUrlInput(currentUrl);
   }, [currentUrl]);
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0.5,
-        p: 0,
-        flex: 1,
-        minWidth: 0,
-        bgcolor: 'transparent',
-      }}
-    >
-      {/* Navigation buttons — only active when connected */}
-      <Tooltip title="Back">
-        <span>
-          <IconButton size="small" disabled={!isActive} onClick={onBack}>
-            <ArrowBackIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Forward">
-        <span>
-          <IconButton size="small" disabled={!isActive} onClick={onForward}>
-            <ArrowForwardIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Reload">
-        <span>
-          <IconButton size="small" disabled={!isActive} onClick={onReload}>
-            <RefreshIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <div className="flex items-center gap-0.5 rounded-md border border-line bg-surface-raised/70 p-0.5">
+        <Tooltip title="Back"><span><button className={iconButtonClass} disabled={!isActive || isLoading} onClick={onBack}><ArrowBackIcon fontSize="small" /></button></span></Tooltip>
+        <Tooltip title="Forward"><span><button className={iconButtonClass} disabled={!isActive || isLoading} onClick={onForward}><ArrowForwardIcon fontSize="small" /></button></span></Tooltip>
+        <Tooltip title="Reload"><span><button className={iconButtonClass} disabled={!isActive || isLoading} onClick={onReload}><RefreshIcon fontSize="small" /></button></span></Tooltip>
+      </div>
 
-      {/* URL bar */}
-      <TextField
-        size="small"
-        fullWidth
-        value={urlInput}
-        onChange={(e) => setUrlInput(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="https://github.com"
-        inputProps={{ 'aria-label': 'Browser URL' }}
-        sx={{
-          flexGrow: 1,
-          minWidth: 220,
-          '& .MuiInputBase-root': {
-            height: 32,
-          },
-        }}
-      />
-
-      {/* Navigate (only when already connected) */}
-      {isActive && (
-        <Tooltip title="Go">
-          <IconButton size="small" color="primary" onClick={handleNavigate}>
-            <SendIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      )}
-
-      {/* Start / Stop */}
-      {!isActive ? (
-        <Tooltip title="Start session">
+      <div className="flex h-9 min-w-[220px] flex-1 items-center rounded-md border border-line bg-canvas px-2 shadow-inner shadow-black/20 focus-within:border-accent/70 focus-within:ring-2 focus-within:ring-accent/15">
+        <input
+          value={urlInput}
+          onChange={(event) => setUrlInput(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter') submit(); }}
+          placeholder="https://example.com"
+          aria-label="Browser URL"
+          className="min-w-0 flex-1 bg-transparent px-1 text-sm text-ink outline-none placeholder:text-slate-600"
+        />
+        <Tooltip title={isActive ? 'Go' : 'Start browser'}>
           <span>
-            <IconButton
-              size="small"
-              color="success"
-              disabled={isCreating}
-              onClick={handleStart}
-            >
-              {isCreating ? <CircularProgress size={18} /> : <PlayArrowIcon />}
-            </IconButton>
+            <button className="grid h-7 w-7 place-items-center rounded bg-accent text-canvas transition-colors hover:bg-accent-strong disabled:opacity-40" disabled={isLoading} onClick={submit}>
+              {isCreating ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-canvas border-t-transparent" /> : isActive ? <SendIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
+            </button>
           </span>
         </Tooltip>
-      ) : (
-        <Tooltip title="Stop viewer socket; browser cache stays available until logout">
-          <IconButton size="small" color="error" onClick={onStop}>
-            <StopIcon />
-          </IconButton>
-        </Tooltip>
-      )}
+      </div>
 
+      {isActive && <Tooltip title="Stop viewer"><button className={`${iconButtonClass} border border-danger/30 text-danger hover:bg-danger/10 hover:text-danger`} onClick={onStop}><StopIcon fontSize="small" /></button></Tooltip>}
+      {isLoading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-label="Browser action in progress" />}
+
+      <div className="mx-1 h-6 w-px bg-line" />
       <Tooltip title={isRecording ? 'Stop recording future interactions' : 'Start recording future interactions'}>
         <span>
-          <Button
-            size="small"
-            variant={isRecording ? 'contained' : 'outlined'}
-            color={isRecording ? 'error' : 'inherit'}
+          <button
+            className={`relative flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-bold tracking-wide transition-all ${isRecording ? 'border-danger bg-danger text-white shadow-[0_0_18px_rgba(240,82,103,0.34)]' : 'border-line bg-surface-raised text-muted hover:border-danger/50 hover:text-ink'} disabled:cursor-not-allowed disabled:opacity-40`}
             disabled={connectionState !== 'connected'}
-            startIcon={<FiberManualRecordIcon fontSize="small" />}
             onClick={onToggleRecording}
-            sx={{ whiteSpace: 'nowrap', minWidth: 0, px: 1 }}
           >
-            {isRecording ? 'Recording' : 'Record'}
-          </Button>
+            {isRecording && <span className="absolute -left-1 -top-1 h-3 w-3 animate-ping rounded-full bg-danger/80" />}
+            <span className={`grid h-5 w-5 place-items-center rounded-full ${isRecording ? 'bg-white/20' : 'bg-danger/15 text-danger'}`}><FiberManualRecordIcon sx={{ fontSize: 15 }} /></span>
+            <span>{isRecording ? 'RECORDING' : 'Record'}</span>
+            {isRecording && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />}
+          </button>
         </span>
       </Tooltip>
 
       <Tooltip title="Save recording to project recordings folder">
         <span>
-          <Button
-            size="small"
-            variant="outlined"
-            color="primary"
-            disabled={!canSaveRecording || isSaving}
-            startIcon={isSaving ? <CircularProgress size={14} /> : <SaveIcon fontSize="small" />}
-            onClick={onOpenSaveRecording}
-            sx={{ whiteSpace: 'nowrap', minWidth: 0, px: 1 }}
-          >
+          <button className="flex h-9 items-center gap-2 rounded-md border border-line bg-surface-raised px-3 text-xs font-semibold text-ink transition-colors hover:border-accent/50 hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40" disabled={!canSaveRecording || isSaving} onClick={onOpenSaveRecording}>
+            {isSaving ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent" /> : <SaveIcon sx={{ fontSize: 16 }} />}
             Save
-          </Button>
+          </button>
         </span>
       </Tooltip>
-    </Box>
+    </div>
   );
 };

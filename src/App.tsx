@@ -393,6 +393,7 @@ export default function App() {
   const [isLoadingRecordingFiles, setIsLoadingRecordingFiles] = useState(false);
   const [isLoadingRecording, setIsLoadingRecording] = useState(false);
   const [isRunningRecording, setIsRunningRecording] = useState(false);
+  const [isBrowserActionLoading, setIsBrowserActionLoading] = useState(false);
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
   const [playbackControlsOpen, setPlaybackControlsOpen] = useState(true);
   const [loadedRecordingOpen, setLoadedRecordingOpen] = useState(false);
@@ -517,6 +518,22 @@ export default function App() {
     onNavigated: handleNavigated,
     onError: handleSocketError,
   });
+
+  const runBrowserAction = useCallback(
+    async (event: ClientToServerEvent) => {
+      setIsBrowserActionLoading(true);
+      try {
+        await sendReplayEvent({ ...event, requestId: crypto.randomUUID() });
+      } catch (error) {
+        setSnackError(
+          error instanceof Error ? error.message : "Browser action failed",
+        );
+      } finally {
+        setIsBrowserActionLoading(false);
+      }
+    },
+    [sendReplayEvent],
+  );
 
   const defaultRecordingName = useMemo(() => {
     const title = saveTitle.trim() || "remote-browser-recording";
@@ -1049,22 +1066,28 @@ export default function App() {
 
   const handleNavigate = useCallback(
     (url: string) => {
-      sendEvent({ type: "navigate", url: normalizeBrowserUrl(url) });
+      void runBrowserAction(
+        {
+          type: "navigate",
+          url: normalizeBrowserUrl(url),
+          waitAfterMs: 1200,
+        },
+      );
     },
-    [sendEvent],
+    [runBrowserAction],
   );
 
   const handleBack = useCallback(
-    () => sendEvent({ type: "navigate-back" }),
-    [sendEvent],
+    () => void runBrowserAction({ type: "navigate-back", waitAfterMs: 800 }),
+    [runBrowserAction],
   );
   const handleForward = useCallback(
-    () => sendEvent({ type: "navigate-forward" }),
-    [sendEvent],
+    () => void runBrowserAction({ type: "navigate-forward", waitAfterMs: 800 }),
+    [runBrowserAction],
   );
   const handleReload = useCallback(
-    () => sendEvent({ type: "reload" }),
-    [sendEvent],
+    () => void runBrowserAction({ type: "reload", waitAfterMs: 800 }),
+    [runBrowserAction],
   );
 
   const handleToggleRecording = useCallback(() => {
@@ -1515,35 +1538,23 @@ export default function App() {
 
   const remoteWidth = session?.viewport.width ?? 1365;
   const remoteHeight = session?.viewport.height ?? 768;
+  const isBrowserLoading =
+    isCreating || isBrowserActionLoading || runningStepId !== null;
 
   return (
     <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        bgcolor: "background.default",
-        overflow: "hidden",
-      }}
+      className="h-screen overflow-hidden bg-canvas text-ink"
+      sx={{ display: "flex", flexDirection: "column" }}
     >
       {/* Toolbar row */}
       <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: 0.5,
-          px: 0.5,
-          py: 0.25,
-          bgcolor: "background.paper",
-          borderBottom: "1px solid",
-          borderColor: "divider",
-          minHeight: 38,
-        }}
+        className="flex min-h-14 items-center gap-2 border-b border-line bg-surface px-3 py-2 shadow-lg shadow-black/20"
       >
         <BrowserToolbar
           currentUrl={currentUrl}
           connectionState={connectionState}
           isCreating={isCreating}
+          isLoading={isBrowserLoading}
           onStart={handleStart}
           onStop={handleStop}
           onNavigate={handleNavigate}
@@ -1557,7 +1568,7 @@ export default function App() {
           onOpenSaveRecording={handleOpenSaveRecording}
         />
         <ConnectionStatus state={connectionState} />
-        <Box sx={{ flex: 1 }} />
+        <Box className="flex-1" />
         {isPlaygroundMode && session && (
           <Button
             size="small"
@@ -1614,14 +1625,10 @@ export default function App() {
           Recorded {recordedSteps.length ? `(${recordedSteps.length})` : ""}
         </Button>
         {isPlaybackPaused && (
-          <Chip size="small" color="warning" label="Paused" />
+          <span className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs font-semibold text-warning">Paused</span>
         )}
         {isRunningRecording && (
-          <Chip
-            size="small"
-            color="primary"
-            label={`Step ${runningStepId ?? ""}`}
-          />
+          <span className="rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">Step {runningStepId ?? ""}</span>
         )}
       </Box>
 
@@ -1672,7 +1679,7 @@ export default function App() {
         </Alert>
       )}
 
-      <Box sx={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <Box className="flex min-h-0 flex-1">
         {/* Browser canvas */}
         <BrowserViewer
           connectionState={connectionState}
@@ -1686,14 +1693,12 @@ export default function App() {
         />
 
         <Box
+          className="border-l border-line bg-surface"
           sx={{
             width:
               playbackControlsOpen || loadedRecordingOpen || recordedStepsOpen
                 ? 340
                 : 0,
-            borderLeft: "1px solid",
-            borderColor: "divider",
-            bgcolor: "background.paper",
             display: "flex",
             flexDirection: "column",
             minHeight: 0,

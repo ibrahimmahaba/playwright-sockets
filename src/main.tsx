@@ -6,8 +6,16 @@ import App from './App';
 import './index.css';
 
 const theme = createTheme({
-  palette: { mode: 'dark' },
+  palette: {
+    mode: 'dark',
+    primary: { main: '#36c7b0' },
+    error: { main: '#f05267' },
+    warning: { main: '#f0b866' },
+    background: { default: '#0b1118', paper: '#111a24' },
+    divider: '#2a3a4a',
+  },
   typography: { fontFamily: 'Inter, system-ui, sans-serif' },
+  shape: { borderRadius: 6 },
 });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
