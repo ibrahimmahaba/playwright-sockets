@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getModulePath } from "../semoss/pixel";
 import type {
   ClientToServerEvent,
   ConnectionState,
@@ -24,11 +25,14 @@ interface PendingReplay {
   timeout: ReturnType<typeof setTimeout>;
 }
 
-const MODULE_PATH = process.env.MODULE || "/Monolith";
 const WS_PROTOCOL = window.location.protocol === "https:" ? "wss:" : "ws:";
-const WS_BASE =
+
+// Resolved at call time so it picks up the runtime SEMOSS module prefix
+// (e.g. "/example-route-prefix/Monolith") from the injected #semoss-env tag
+// rather than a build-time constant.
+const getWsBase = (): string =>
   import.meta.env.VITE_WS_BASE_URL ||
-  `${WS_PROTOCOL}//${window.location.host}${MODULE_PATH}`;
+  `${WS_PROTOCOL}//${window.location.host}${getModulePath()}`;
 
 export function useBrowserSocket({
   wsUrl,
@@ -53,7 +57,7 @@ export function useBrowserSocket({
     }
 
     // If VITE_WS_BASE_URL is defined use it, otherwise derive from current location.
-    const base = WS_BASE.replace(/\/$/, "");
+    const base = getWsBase().replace(/\/$/, "");
     return `${base}${path}`;
   }, []);
 

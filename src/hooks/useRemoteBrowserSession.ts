@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { fetchWithCsrf, MODULE_PATH, runPixel } from '../semoss/pixel';
+import { fetchWithCsrf, getModulePath, runPixel } from '../semoss/pixel';
 import type {
   LoadedRecording,
   RemoteBrowserSessionInfo,
@@ -12,7 +12,9 @@ import type {
   StepsEnvelope,
 } from '../types/browserEvents';
 
-const API_BASE = `${MODULE_PATH}/api/browser-sessions`;
+// Resolved at call time so it picks up the runtime SEMOSS module prefix
+// (e.g. "/example-route-prefix/Monolith") rather than a build-time constant.
+const apiBase = () => `${getModulePath()}/api/browser-sessions`;
 
 interface UseRemoteBrowserSessionReturn {
   session: RemoteBrowserSessionInfo | null;
@@ -72,7 +74,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
       setIsCreating(true);
       setError(null);
       try {
-        const res = await fetchWithCsrf(API_BASE, {
+        const res = await fetchWithCsrf(apiBase(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url, viewportWidth: width, viewportHeight: height, preserveExisting }),
@@ -102,7 +104,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     const s = sessionRef.current;
     if (!s) return;
     try {
-      await fetchWithCsrf(`${API_BASE}/${s.sessionId}`, {
+      await fetchWithCsrf(`${apiBase()}/${s.sessionId}`, {
         method: 'DELETE',
       });
     } catch {
@@ -122,7 +124,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     setIsSaving(true);
     setError(null);
     try {
-      const res = await fetchWithCsrf(`${API_BASE}/${s.sessionId}/recording/save`, {
+      const res = await fetchWithCsrf(`${apiBase()}/${s.sessionId}/recording/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -152,7 +154,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
 
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/${s.sessionId}/recording`, {
+      const res = await fetch(`${apiBase()}/${s.sessionId}/recording`, {
         method: 'GET',
         credentials: 'include',
       });
@@ -382,7 +384,7 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
     const s = sessionRef.current;
     if (!s) return [];
     try {
-      const res = await fetch(`${API_BASE}/${s.sessionId}/steps`, {
+      const res = await fetch(`${apiBase()}/${s.sessionId}/steps`, {
         method: 'GET',
         credentials: 'include',
       });
