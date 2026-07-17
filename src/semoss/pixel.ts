@@ -16,13 +16,29 @@ export function getModulePath(): string {
   return Env.MODULE || process.env.MODULE || "/Monolith";
 }
 
-type PixelReturn<T = unknown> = {
+export type PixelReturn<T = unknown> = {
   insightID?: string;
   pixelReturn?: Array<{
     output?: T;
     operationType?: unknown;
   }>;
 };
+
+export function assertPixelSuccess(
+  response: PixelReturn<unknown>,
+  operation: string,
+): void {
+  const errors = response.pixelReturn
+    ?.filter((item) => String(item.operationType || "").includes("ERROR"))
+    .map((item) =>
+      typeof item.output === "string"
+        ? item.output
+        : JSON.stringify(item.output),
+    );
+  if (errors?.length) {
+    throw new Error(`${operation} failed: ${errors.join("\n")}`);
+  }
+}
 
 let csrfToken = "";
 

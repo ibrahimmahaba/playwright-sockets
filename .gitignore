@@ -6,6 +6,11 @@ node_modules/
 .env.local
 .env.*.local
 
+# Build output
+dist/
+portals/
+portals*.zip
+
 # Vite cache
 .vite/
 
@@ -30,7 +35,3 @@ pnpm-debug.log*
 # Lock files (keep package-lock.json, ignore others)
 pnpm-lock.yaml
 yarn.lock
-
-# Generated SEMOSS portal bundles
-portals/
-portals*.zip

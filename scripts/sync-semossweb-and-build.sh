@@ -29,7 +29,7 @@ echo "Syncing canonical source from ${SOURCE_ROOT}"
 rsync -a --delete --exclude node_modules --exclude portals "${SOURCE_ROOT}/src/" "${APP_ROOT}/src/"
 rsync -a --delete "${SOURCE_ROOT}/mcp/" "${APP_ROOT}/mcp/"
 
-for file in .gitignore index.html package.json package-lock.json tsconfig.json vite.config.ts; do
+for file in index.html package.json package-lock.json tsconfig.json vite.config.ts; do
   if [[ -f "${SOURCE_ROOT}/${file}" ]]; then
     cp "${SOURCE_ROOT}/${file}" "${APP_ROOT}/${file}"
   fi
@@ -44,7 +44,7 @@ echo "Installing portal dependencies"
 echo "Building portal bundle"
 (
   cd "${APP_ROOT}"
-  pnpm run build
+  pnpm exec vite build --outDir portals
 )
 
 echo "Portal source synchronized and built at ${APP_ROOT}/portals"
