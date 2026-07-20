@@ -1,4 +1,20 @@
-export const MODULE_PATH = process.env.MODULE || "/Monolith";
+import { Env } from "@semoss/sdk";
+
+/**
+ * Resolve the SEMOSS module path (e.g. "/example-route-prefix/Monolith") at call time.
+ *
+ * In the SEMOSS-served build, `client.ts` / `insight.initialize()` populate
+ * `Env.MODULE` from the injected `#semoss-env` script tag, so this picks up the
+ * runtime prefix. In local dev there is no tag, so we fall back to the
+ * build-time `process.env.MODULE` (from vite `define`) and finally `/Monolith`.
+ *
+ * NOTE: this is intentionally a function, not a module-level const — the const
+ * would capture an empty `Env.MODULE` before the env is loaded and would freeze
+ * the build-time value into the bundle.
+ */
+export function getModulePath(): string {
+  return Env.MODULE || process.env.MODULE || "/Monolith";
+}
 
 export type PixelReturn<T = unknown> = {
   insightID?: string;
@@ -31,7 +47,7 @@ async function getCsrfToken(): Promise<string> {
     return csrfToken;
   }
 
-  const response = await fetch(`${MODULE_PATH}/api/config/fetchCsrf`, {
+  const response = await fetch(`${getModulePath()}/api/config/fetchCsrf`, {
     credentials: "include",
     headers: {
       "X-CSRF-Token": "fetch",
@@ -77,7 +93,7 @@ export async function runPixel<T = unknown>(
   }
   body.set("tz", Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
 
-  const response = await fetchWithCsrf(`${MODULE_PATH}/api/engine/runPixel`, {
+  const response = await fetchWithCsrf(`${getModulePath()}/api/engine/runPixel`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
