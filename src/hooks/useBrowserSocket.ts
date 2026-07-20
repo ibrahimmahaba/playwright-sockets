@@ -16,6 +16,7 @@ interface UseBrowserSocketOptions {
 	onError: (message: string) => void;
 	onTabsChanged: (tabs: BrowserTabInfo[], activeTabId: string) => void;
 	onTabActivated: (tabId: string) => void;
+	onCursorChanged: (cursor: string) => void;
 }
 
 interface UseBrowserSocketReturn {
@@ -52,12 +53,9 @@ interface PendingTabControl {
 
 const WS_PROTOCOL = window.location.protocol === "https:" ? "wss:" : "ws:";
 
-// Resolved at call time so it picks up the runtime SEMOSS module prefix
-// (e.g. "/example-route-prefix/Monolith") from the injected #semoss-env tag
-// rather than a build-time constant.
 const getWsBase = (): string =>
-  import.meta.env.VITE_WS_BASE_URL ||
-  `${WS_PROTOCOL}//${window.location.host}${getModulePath()}`;
+	import.meta.env.VITE_WS_BASE_URL ||
+	`${WS_PROTOCOL}//${window.location.host}${getModulePath()}`;
 
 export function useBrowserSocket({
 	wsUrl,
@@ -66,6 +64,7 @@ export function useBrowserSocket({
 	onError,
 	onTabsChanged,
 	onTabActivated,
+	onCursorChanged,
 }: UseBrowserSocketOptions): UseBrowserSocketReturn {
 	const [connectionState, setConnectionState] =
 		useState<ConnectionState>("idle");
@@ -89,10 +88,10 @@ export function useBrowserSocket({
 			return path.replace(/^http/i, "ws");
 		}
 
-    // If VITE_WS_BASE_URL is defined use it, otherwise derive from current location.
-    const base = getWsBase().replace(/\/$/, "");
-    return `${base}${path}`;
-  }, []);
+		// If VITE_WS_BASE_URL is defined use it, otherwise derive from current location.
+		const base = getWsBase().replace(/\/$/, "");
+		return `${base}${path}`;
+	}, []);
 
 	useEffect(() => {
 		if (!wsUrl) return;
@@ -129,6 +128,9 @@ export function useBrowserSocket({
 						break;
 					case "tab-opened":
 						// The backend follows this notification with the complete tab state.
+						break;
+					case "cursor-changed":
+						onCursorChanged(msg.cursor);
 						break;
 					case "tab-control-result": {
 						const pending = pendingTabControlRef.current.get(
@@ -231,6 +233,7 @@ export function useBrowserSocket({
 		onError,
 		onTabsChanged,
 		onTabActivated,
+		onCursorChanged,
 	]);
 
 	const sendEvent = useCallback((event: ClientToServerEvent) => {

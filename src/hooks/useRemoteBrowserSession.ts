@@ -1,5 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
-import { assertPixelSuccess, fetchWithCsrf, getModulePath, runPixel } from '../semoss/pixel';
+import { useCallback, useRef, useState } from "react";
+import {
+	assertPixelSuccess,
+	fetchWithCsrf,
+	getModulePath,
+	runPixel,
+} from "../semoss/pixel";
 import type {
 	LoadedRecording,
 	RecordingProjectOption,
@@ -12,9 +17,7 @@ import type {
 	StepsEnvelope,
 } from "../types/browserEvents";
 
-// Resolved at call time so it picks up the runtime SEMOSS module prefix
-// (e.g. "/example-route-prefix/Monolith") rather than a build-time constant.
-const apiBase = () => `${getModulePath()}/api/browser-sessions`;
+const getApiBase = () => `${getModulePath()}/api/browser-sessions`;
 
 interface UseRemoteBrowserSessionReturn {
 	session: RemoteBrowserSessionInfo | null;
@@ -86,21 +89,26 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
 	const [isLoadingProjects, setIsLoadingProjects] = useState(false);
 	const sessionRef = useRef<RemoteBrowserSessionInfo | null>(null);
 
-  const createSession = useCallback(
-    async (
-      url = '',
-      width = 1365,
-      height = 768,
-      preserveExisting = false,
-    ): Promise<RemoteBrowserSessionInfo | null> => {
-      setIsCreating(true);
-      setError(null);
-      try {
-        const res = await fetchWithCsrf(apiBase(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, viewportWidth: width, viewportHeight: height, preserveExisting }),
-        });
+	const createSession = useCallback(
+		async (
+			url = "",
+			width = 1365,
+			height = 768,
+			preserveExisting = false,
+		): Promise<RemoteBrowserSessionInfo | null> => {
+			setIsCreating(true);
+			setError(null);
+			try {
+				const res = await fetchWithCsrf(getApiBase(), {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						url,
+						viewportWidth: width,
+						viewportHeight: height,
+						preserveExisting,
+					}),
+				});
 
 				if (!res.ok) {
 					const errBody = await res
@@ -125,19 +133,19 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
 		[],
 	);
 
-  const closeSession = useCallback(async () => {
-    const s = sessionRef.current;
-    if (!s) return;
-    try {
-      await fetchWithCsrf(`${apiBase()}/${s.sessionId}`, {
-        method: 'DELETE',
-      });
-    } catch {
-      // Best-effort close
-    }
-    setSession(null);
-    sessionRef.current = null;
-  }, []);
+	const closeSession = useCallback(async () => {
+		const s = sessionRef.current;
+		if (!s) return;
+		try {
+			await fetchWithCsrf(`${getApiBase()}/${s.sessionId}`, {
+				method: "DELETE",
+			});
+		} catch {
+			// Best-effort close
+		}
+		setSession(null);
+		sessionRef.current = null;
+	}, []);
 
 	const saveRecording = useCallback(
 		async (
@@ -149,14 +157,17 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
 				return null;
 			}
 
-    setIsSaving(true);
-    setError(null);
-    try {
-      const res = await fetchWithCsrf(`${apiBase()}/${s.sessionId}/recording/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+			setIsSaving(true);
+			setError(null);
+			try {
+				const res = await fetchWithCsrf(
+					`${getApiBase()}/${s.sessionId}/recording/save`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify(payload),
+					},
+				);
 
 				if (!res.ok) {
 					const errBody = await res
@@ -186,12 +197,15 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
 				return null;
 			}
 
-    setError(null);
-    try {
-      const res = await fetch(`${apiBase()}/${s.sessionId}/recording`, {
-        method: 'GET',
-        credentials: 'include',
-      });
+			setError(null);
+			try {
+				const res = await fetch(
+					`${getApiBase()}/${s.sessionId}/recording`,
+					{
+						method: "GET",
+						credentials: "include",
+					},
+				);
 
 				if (!res.ok) {
 					const errBody = await res
@@ -505,21 +519,25 @@ export function useRemoteBrowserSession(): UseRemoteBrowserSessionReturn {
 		[],
 	);
 
-  const getRecordedSteps = useCallback(async (): Promise<RemoteBrowserRecordedStep[]> => {
-    const s = sessionRef.current;
-    if (!s) return [];
-    try {
-      const res = await fetch(`${apiBase()}/${s.sessionId}/steps`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      if (!res.ok) return [];
-      const output = await res.json();
-      return Array.isArray(output) ? output as RemoteBrowserRecordedStep[] : [];
-    } catch {
-      return [];
-    }
-  }, []);
+	const getRecordedSteps = useCallback(async (): Promise<
+		RemoteBrowserRecordedStep[]
+	> => {
+		const s = sessionRef.current;
+		if (!s) return [];
+		try {
+			const res = await fetch(`${getApiBase()}/${s.sessionId}/steps`, {
+				method: "GET",
+				credentials: "include",
+			});
+			if (!res.ok) return [];
+			const output = await res.json();
+			return Array.isArray(output)
+				? (output as RemoteBrowserRecordedStep[])
+				: [];
+		} catch {
+			return [];
+		}
+	}, []);
 
 	/**
 	 * Reads the room's `mcp/pixel_mcp.json` insight asset (if present), merges a
