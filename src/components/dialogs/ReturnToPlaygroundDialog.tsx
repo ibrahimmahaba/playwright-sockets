@@ -1,7 +1,9 @@
 import CloseIcon from "@mui/icons-material/Close";
 import {
+	Autocomplete,
 	Box,
 	Button,
+	CircularProgress,
 	Dialog,
 	DialogActions,
 	DialogContent,
@@ -9,17 +11,23 @@ import {
 	IconButton,
 	Radio,
 	RadioGroup,
+	TextField,
 	Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+import type { RecordingProjectOption } from "../../types/browserEvents";
 
 type RecordingDestination = "playground" | "playground-and-app";
 
 interface ReturnToPlaygroundDialogProps {
 	open: boolean;
 	disabled: boolean;
+	projects: RecordingProjectOption[];
+	project: RecordingProjectOption | null;
+	isLoadingProjects: boolean;
 	onClose: () => void;
-	onSubmit: (saveToPlaywrightApp: boolean) => void;
+	onProjectChange: (project: RecordingProjectOption | null) => void;
+	onSubmit: (project: RecordingProjectOption | null) => void;
 }
 
 const destinationOptions: Array<{
@@ -44,7 +52,11 @@ const destinationOptions: Array<{
 export function ReturnToPlaygroundDialog({
 	open,
 	disabled,
+	projects,
+	project,
+	isLoadingProjects,
 	onClose,
+	onProjectChange,
 	onSubmit,
 }: ReturnToPlaygroundDialogProps) {
 	const [destination, setDestination] =
@@ -53,6 +65,8 @@ export function ReturnToPlaygroundDialog({
 	useEffect(() => {
 		if (open) setDestination("playground");
 	}, [open]);
+
+	const savingToApp = destination === "playground-and-app";
 
 	return (
 		<Dialog
@@ -132,6 +146,39 @@ export function ReturnToPlaygroundDialog({
 									>
 										{option.description}
 									</Typography>
+									{option.value === "playground-and-app" && (
+										<Autocomplete
+											options={projects}
+											value={project}
+											onChange={(_, value) =>
+												onProjectChange(value)
+											}
+											onOpen={() =>
+												setDestination(
+													"playground-and-app",
+												)
+											}
+											loading={isLoadingProjects}
+											disabled={disabled}
+											getOptionLabel={(item) =>
+												item.label
+											}
+											isOptionEqualToValue={(
+												item,
+												value,
+											) => item.value === value.value}
+											renderInput={(params) => (
+												<TextField
+													{...params}
+													label="Project"
+													placeholder="Select a project"
+													required={savingToApp}
+													size="small"
+													sx={{ mt: 1.5 }}
+												/>
+											)}
+										/>
+									)}
 								</Box>
 							</Box>
 						);
@@ -144,10 +191,16 @@ export function ReturnToPlaygroundDialog({
 				</Button>
 				<Button
 					variant="contained"
-					onClick={() =>
-						onSubmit(destination === "playground-and-app")
+					onClick={() => onSubmit(savingToApp ? project : null)}
+					disabled={
+						disabled ||
+						(savingToApp && (isLoadingProjects || !project))
 					}
-					disabled={disabled}
+					startIcon={
+						disabled ? (
+							<CircularProgress size={16} color="inherit" />
+						) : undefined
+					}
 				>
 					{disabled ? "Sending..." : "Send to Playground"}
 				</Button>

@@ -58,6 +58,7 @@ import type {
 	ClientToServerEvent,
 	McpToolContext,
 	RecordingMetadataModelOption,
+	RecordingProjectOption,
 	RemoteBrowserRecordedStep,
 	SelectedTextContext,
 	SelectionBounds,
@@ -94,6 +95,7 @@ export default function App() {
 		getRecordingEnvelope,
 		saveRoomRecording,
 		listRecordingProjects,
+		listMcpProjects,
 		listRecordingFiles,
 		getRoomRecordingEnvelope,
 		loadRecording,
@@ -116,6 +118,13 @@ export default function App() {
 	const [isReturningToPlayground, setIsReturningToPlayground] =
 		useState(false);
 	const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+	const [returnProjects, setReturnProjects] = useState<
+		RecordingProjectOption[]
+	>([]);
+	const [returnProject, setReturnProject] =
+		useState<RecordingProjectOption | null>(null);
+	const [isLoadingReturnProjects, setIsLoadingReturnProjects] =
+		useState(false);
 	const [isGeneratingRecordingMetadata, setIsGeneratingRecordingMetadata] =
 		useState(false);
 	const [isLoadingMetadataModels, setIsLoadingMetadataModels] =
@@ -1107,8 +1116,23 @@ export default function App() {
 		void prepareSaveDialog();
 	}, [prepareSaveDialog]);
 
+	const handleOpenReturnDialog = useCallback(async () => {
+		setReturnDialogOpen(true);
+		setIsLoadingReturnProjects(true);
+		try {
+			const projects = await listMcpProjects(effectiveInsightId);
+			setReturnProjects(projects);
+			setReturnProject(projects[0] ?? null);
+			if (projects.length === 0) {
+				setSnackMessage("No MCP-tagged projects are available");
+			}
+		} finally {
+			setIsLoadingReturnProjects(false);
+		}
+	}, [effectiveInsightId, listMcpProjects]);
+
 	const handleReturnToPlayground = useCallback(
-		async (saveToPlaywrightApp: boolean) => {
+		async (appProject: RecordingProjectOption | null) => {
 			if (returningToPlaygroundRef.current) return;
 			returningToPlaygroundRef.current = true;
 			setIsReturningToPlayground(true);
@@ -1137,12 +1161,6 @@ export default function App() {
 						"No active browser session is available to save",
 					);
 				}
-				if (saveToPlaywrightApp && !toolContext.projectId) {
-					throw new Error(
-						"The current Playwright app project ID is unavailable",
-					);
-				}
-
 				if (isRecording) {
 					await sendRecordingControlEvent({
 						type: "recording-control",
@@ -1195,9 +1213,9 @@ export default function App() {
 
 				let appRecording: { project: string; fileName: string } | null =
 					null;
-				if (saveToPlaywrightApp) {
+				if (appProject) {
 					const appSaved = await saveRecording({
-						project: toolContext.projectId,
+						project: appProject.value,
 						name: saved.fileName,
 						title: enrichedEnvelope.meta?.title,
 						description: enrichedEnvelope.meta?.description,
@@ -1405,6 +1423,8 @@ export default function App() {
 		isCreating ||
 		pendingBrowserActionCount > 0 ||
 		playback.runningStepId !== null;
+	const replayMenuOpen =
+		playback.controlsOpen || playback.loadedRecordingOpen;
 
 	return (
 		<Box
@@ -1526,7 +1546,7 @@ export default function App() {
 								isCapturingSelectedText ||
 								selectionMode
 							}
-							onClick={() => setReturnDialogOpen(true)}
+							onClick={() => void handleOpenReturnDialog()}
 							startIcon={
 								isReturningToPlayground ||
 								isSaving ||
@@ -1550,25 +1570,19 @@ export default function App() {
 					)}
 					<Button
 						size="small"
-						variant={
-							playback.controlsOpen ||
-							playback.loadedRecordingOpen
-								? "contained"
-								: "outlined"
-						}
+						variant={replayMenuOpen ? "contained" : "outlined"}
 						startIcon={
-							playback.controlsOpen ||
-							playback.loadedRecordingOpen ? (
+							replayMenuOpen ? (
 								<ExpandMoreIcon />
 							) : (
 								<ChevronRightIcon />
 							)
 						}
 						onClick={() => {
-							playback.setControlsOpen(!playback.controlsOpen);
-							if (playback.loadedRecording) {
-								playback.setLoadedRecordingOpen(true);
-							}
+							playback.setControlsOpen(!replayMenuOpen);
+							playback.setLoadedRecordingOpen(
+								!replayMenuOpen && !!playback.loadedRecording,
+							);
 						}}
 						sx={{ whiteSpace: "nowrap", minWidth: 0, px: 1 }}
 					>
@@ -1631,7 +1645,15 @@ export default function App() {
 					/>
 				)}
 
-			<Box sx={{ display: "flex", flex: 1, minHeight: 0 }}>
+			<Box
+				sx={{
+					display: "flex",
+					position: "relative",
+					flex: 1,
+					minHeight: 0,
+					overflow: "hidden",
+				}}
+			>
 				{/* Browser canvas */}
 				<BrowserViewer
 					connectionState={connectionState}
@@ -1675,9 +1697,13 @@ export default function App() {
 				disabled={
 					isReturningToPlayground || isSaving || isSavingRecording
 				}
+				projects={returnProjects}
+				project={returnProject}
+				isLoadingProjects={isLoadingReturnProjects}
 				onClose={() => setReturnDialogOpen(false)}
-				onSubmit={(saveToPlaywrightApp) => {
-					void handleReturnToPlayground(saveToPlaywrightApp);
+				onProjectChange={setReturnProject}
+				onSubmit={(project) => {
+					void handleReturnToPlayground(project);
 				}}
 			/>
 
